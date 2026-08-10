@@ -604,6 +604,8 @@ export default function App() {
 
   const [selectedPegServiceFilter, setSelectedPegServiceFilter] = useState<string>('Todos');
   const [expandedPegHistDates, setExpandedPegHistDates] = useState<Record<string, boolean>>({});
+  const [pegHistSearchQuery, setPegHistSearchQuery] = useState('');
+  const [expandedPegHistMonths, setExpandedPegHistMonths] = useState<Record<string, boolean>>({});
   const [pegStartHour, setPegStartHour] = useState<string>('');
   const [pegSchedulesStr, setPegSchedulesStr] = useState<string>('');
   const [useCustomScheduleDoses, setUseCustomScheduleDoses] = useState<boolean>(false);
@@ -8296,177 +8298,241 @@ export default function App() {
                   })()}
                 </div>
 
-                {/* 2. Historial y Altas de Pacientes (Agotados / Alta) */}
+                {/* 2. Historial y Altas de Pacientes (Agrupado por Mes con Buscador Rápido) */}
                 <div className="bg-white p-5 rounded-2xl border border-slate-200/60 shadow-sm flex flex-col gap-4 flex-1">
                   {(() => {
-                    const historicalPatients = pegDeliveries.filter(item => {
+                    const historicalPatients = pegDeliveries.filter(item => item.status === 'discharged');
+
+                    // Filtrado por servicio y por buscador
+                    const filteredHist = historicalPatients.filter(item => {
                       if (selectedPegServiceFilter !== 'Todos' && item.servicio !== selectedPegServiceFilter) return false;
-                      return item.status === 'discharged';
+                      if (!pegHistSearchQuery.trim()) return true;
+                      const q = pegHistSearchQuery.toLowerCase().trim();
+                      const parsed = parsePegPatientData(item);
+                      const nameMatch = parsed.cleanName.toLowerCase().includes(q);
+                      const rawMatch = (item.paciente_cama || '').toLowerCase().includes(q);
+                      const serviceMatch = (item.servicio || '').toLowerCase().includes(q);
+                      const dateMatch = (item.discharge_date || '').toLowerCase().includes(q);
+                      return nameMatch || rawMatch || serviceMatch || dateMatch;
                     });
 
-                    const filteredDischargedSobres = historicalPatients
-                      .filter(item => item.status === 'discharged')
+                    const totalDischargedSobres = historicalPatients
                       .reduce((acc, item) => acc + (item.leftover_sobres || 0), 0);
-                    const roundedDischarged = Math.round(filteredDischargedSobres * 2) / 2;
+                    const roundedDischarged = Math.round(totalDischargedSobres * 2) / 2;
                     const filterLabelSuffix = selectedPegServiceFilter === 'Todos' ? '(Total)' : `(${selectedPegServiceFilter})`;
 
-                    // Agrupar por fecha de término/alta
-                    const histGroups: Record<string, any[]> = {};
-                    historicalPatients.forEach(item => {
+                    // Agrupar por MES (ej: "Agosto 2026", "Julio 2026")
+                    const monthGroups: Record<string, any[]> = {};
+                    filteredHist.forEach(item => {
                       const finishDate = getPatientFinishedDate(item);
-                      if (!histGroups[finishDate]) histGroups[finishDate] = [];
-                      histGroups[finishDate].push(item);
+                      const mKey = getMonthYearKey(finishDate);
+                      if (!monthGroups[mKey]) monthGroups[mKey] = [];
+                      monthGroups[mKey].push(item);
                     });
 
-                    const sortedHistDates = Object.keys(histGroups).sort((a, b) => b.localeCompare(a));
+                    // Ordenar meses (el mes más reciente primero)
+                    const sortedMonthKeys = Object.keys(monthGroups).sort((a, b) => {
+                      const dateA = monthGroups[a][0]?.discharge_date || getPatientFinishedDate(monthGroups[a][0]);
+                      const dateB = monthGroups[b][0]?.discharge_date || getPatientFinishedDate(monthGroups[b][0]);
+                      return dateB.localeCompare(dateA);
+                    });
+
+                    const currentMonthKey = getMonthYearKey(new Date().toISOString().split('T')[0]);
 
                     return (
                       <>
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2">
-                          <h4 className="font-bold text-xs text-slate-700 uppercase tracking-tight">
-                            📋 Historial y Altas de Pacientes
-                          </h4>
-                          <div className="px-2.5 py-1 bg-slate-50 border border-slate-200/80 rounded-lg text-[10px] text-slate-600 font-semibold flex items-center gap-1.5 self-start sm:self-auto">
-                            <span>Sobres sobrantes por altas:</span>
-                            <strong className="text-purple-700 font-black">{roundedDischarged.toFixed(1)} sobres</strong>
-                            <span className="text-[9px] text-slate-400 font-medium">{filterLabelSuffix}</span>
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                          <div className="flex items-center gap-2">
+                            <h4 className="font-bold text-xs text-slate-700 uppercase tracking-tight">
+                              📋 Historial y Altas de Pacientes
+                            </h4>
+                            <span className="text-[10px] bg-purple-100 text-purple-800 font-bold px-2 py-0.5 rounded-full">
+                              {filteredHist.length} altas
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {/* Buscador Rápido */}
+                            <div className="relative min-w-[200px] flex-1 sm:flex-none">
+                              <input
+                                type="text"
+                                placeholder="🔍 Buscar por nombre o cama..."
+                                value={pegHistSearchQuery}
+                                onChange={(e) => setPegHistSearchQuery(e.target.value)}
+                                className="w-full pl-3 pr-8 py-1.5 border border-slate-200 rounded-xl font-medium text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-purple-500/20 bg-slate-50"
+                              />
+                              {pegHistSearchQuery && (
+                                <button
+                                  onClick={() => setPegHistSearchQuery('')}
+                                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold border-none bg-transparent cursor-pointer"
+                                >
+                                  ✕
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="px-2.5 py-1.5 bg-purple-50 border border-purple-100 rounded-xl text-[10px] text-purple-800 font-semibold flex items-center gap-1.5 shrink-0">
+                              <span>Sobres sobrantes devueltos:</span>
+                              <strong className="text-purple-900 font-black">{roundedDischarged.toFixed(1)} sobres</strong>
+                              <span className="text-[9px] text-purple-600 font-medium">{filterLabelSuffix}</span>
+                            </div>
                           </div>
                         </div>
 
-                        {historicalPatients.length === 0 ? (
+                        {filteredHist.length === 0 ? (
                           <div className="py-8 text-center text-slate-400 text-xs font-bold bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
-                            No hay pacientes en el historial.
+                            {pegHistSearchQuery ? `No se encontraron altas que coincidan con "${pegHistSearchQuery}".` : 'No hay pacientes en el historial.'}
                           </div>
                         ) : (
-                          <div className="overflow-y-visible max-h-none pr-1">
-                            {sortedHistDates.map(dateKey => {
-                              const isExpanded = !!expandedPegHistDates[dateKey];
-                              const groupItems = histGroups[dateKey];
-                          
-                          return (
-                            <div key={dateKey} className="border border-slate-100 rounded-xl overflow-hidden bg-slate-50/50 mb-2.5 shadow-sm">
-                              {/* Cabecera del Día de Alta/Término */}
-                              <button
-                                onClick={() => setExpandedPegHistDates(prev => ({ ...prev, [dateKey]: !isExpanded }))}
-                                className="w-full flex items-center justify-between px-3 py-2 bg-slate-100/50 hover:bg-slate-200/40 text-slate-700 font-bold text-[10px] uppercase tracking-wider transition-all cursor-pointer border-none focus:outline-none"
-                              >
-                                <span>📅 {formatFriendlyDate(dateKey)} ({groupItems.length} paciente{groupItems.length > 1 ? 's' : ''})</span>
-                                <ChevronDown className={"w-3.5 h-3.5 text-slate-400 transition-transform duration-200 " + (isExpanded ? "rotate-180" : "")} />
-                              </button>
+                          <div className="overflow-y-visible max-h-none pr-1 space-y-3">
+                            {sortedMonthKeys.map(monthKey => {
+                              const groupItems = monthGroups[monthKey];
+                              // El mes actual viene desplegado por defecto (o todos desplegados si hay búsqueda)
+                              const isDefaultOpen = monthKey === currentMonthKey || !!pegHistSearchQuery.trim();
+                              const isExpanded = expandedPegHistMonths[monthKey] !== undefined ? expandedPegHistMonths[monthKey] : isDefaultOpen;
+                              
+                              const monthSobres = groupItems.reduce((acc, item) => acc + (item.leftover_sobres || 0), 0);
 
-                              {isExpanded && (
-                                <div className="bg-white divide-y divide-slate-100 px-3 py-1">
-                                  {(() => {
-                                    // Agrupar items de este día por servicio
-                                    const itemsByService = {};
-                                    groupItems.forEach(item => {
-                                      const svc = item.servicio;
-                                      if (!itemsByService[svc]) itemsByService[svc] = [];
-                                      itemsByService[svc].push(item);
-                                    });
+                              return (
+                                <div key={monthKey} className="border border-purple-100 rounded-2xl overflow-hidden bg-white shadow-sm transition-all">
+                                  {/* Cabecera del Mes de Alta */}
+                                  <button
+                                    onClick={() => setExpandedPegHistMonths(prev => ({ ...prev, [monthKey]: !isExpanded }))}
+                                    className="w-full flex items-center justify-between px-4 py-2.5 bg-gradient-to-r from-purple-50 via-slate-50 to-indigo-50/60 hover:from-purple-100/60 hover:to-indigo-100/60 text-slate-800 font-extrabold text-xs uppercase tracking-wider transition-all cursor-pointer border-none focus:outline-none border-b border-purple-100/50"
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <span>📅</span>
+                                      <span className="text-purple-950 font-black">{monthKey}</span>
+                                      <span className="text-[10px] font-bold text-purple-700 bg-white/80 px-2 py-0.5 rounded-full border border-purple-200/60">
+                                        {groupItems.length} paciente{groupItems.length > 1 ? 's' : ''}
+                                      </span>
+                                    </div>
 
-                                    return Object.keys(itemsByService).map(svcKey => {
-                                      const svcItems = itemsByService[svcKey];
-                                      return (
-                                        <div key={svcKey} className="py-2 first:pt-1 last:pb-1">
-                                          {/* Título de sección de servicio */}
-                                          <div className="flex items-center gap-1.5 mb-1 mt-1 shrink-0">
-                                            <span className={"w-1.5 h-1.5 rounded-full " + (
-                                              svcKey === 'Lactantes' ? 'bg-blue-500' :
-                                              svcKey === 'Preescolares' ? 'bg-emerald-500' :
-                                              svcKey === 'Escolares' ? 'bg-purple-500' :
-                                              svcKey === 'Oncoped' ? 'bg-cyan-500' :
-                                              'bg-slate-500'
-                                            )} />
-                                            <span className="text-[8px] font-black text-slate-400 uppercase tracking-wider">{svcKey}</span>
-                                          </div>
+                                    <div className="flex items-center gap-3">
+                                      <span className="text-[10px] font-semibold text-purple-800 hidden sm:inline">
+                                        Devueltos: <strong>{monthSobres.toFixed(1)} sobres</strong>
+                                      </span>
+                                      <ChevronDown className={"w-4 h-4 text-purple-600 transition-transform duration-200 " + (isExpanded ? "rotate-180" : "")} />
+                                    </div>
+                                  </button>
 
-                                          {/* Pacientes de este servicio */}
-                                      <div className="divide-y divide-slate-100/50 pl-2">
-                                            {svcItems.map(item => {
-                                              const isDischarged = item.status === 'discharged';
-                                              return (
-                                                <div key={item.id} className="py-2 flex items-center justify-between gap-4 text-xs">
-                                                  <div className="flex flex-col gap-0.5 min-w-0 flex-1">
-                                                    <div className="flex items-center gap-2 flex-wrap">
-                                                      <span className="text-slate-800 font-bold text-xs break-words whitespace-normal">{parsePegPatientData(item).cleanName}</span>
-                                                      {isDischarged ? (
-                                                        <span className="px-2 py-0.5 rounded-full text-[8px] font-black bg-rose-100 text-rose-800 border border-rose-200">
-                                                          {"🔴 DE ALTA (Sobrante: " + item.leftover_sobres?.toFixed(1) + " sobres)"}
-                                                        </span>
-                                                      ) : (
-                                                        <span className="px-2 py-0.5 rounded-full text-[8px] font-black bg-slate-100 text-slate-600 border border-slate-200">
-                                                          ⚪ SIN STOCK (Agotado)
-                                                        </span>
-                                                      )}
+                                  {isExpanded && (
+                                    <div className="bg-white divide-y divide-slate-100 px-4 py-2">
+                                      {(() => {
+                                        // Agrupar items de este mes por servicio
+                                        const itemsByService: Record<string, any[]> = {};
+                                        groupItems.forEach(item => {
+                                          const svc = item.servicio || 'Sin Servicio';
+                                          if (!itemsByService[svc]) itemsByService[svc] = [];
+                                          itemsByService[svc].push(item);
+                                        });
+
+                                        return Object.keys(itemsByService).map(svcKey => {
+                                          const svcItems = itemsByService[svcKey];
+                                          return (
+                                            <div key={svcKey} className="py-2.5 first:pt-1 last:pb-1">
+                                              {/* Título de sección de servicio */}
+                                              <div className="flex items-center gap-1.5 mb-1.5 shrink-0">
+                                                <span className={"w-2 h-2 rounded-full " + (
+                                                  svcKey === 'Lactantes' ? 'bg-blue-500' :
+                                                  svcKey === 'Preescolares' ? 'bg-emerald-500' :
+                                                  svcKey === 'Escolares' ? 'bg-purple-500' :
+                                                  svcKey === 'Oncoped' ? 'bg-cyan-500' :
+                                                  'bg-slate-500'
+                                                )} />
+                                                <span className="text-[9px] font-black text-slate-500 uppercase tracking-wider">{svcKey}</span>
+                                                <span className="text-[9px] text-slate-400 font-semibold">({svcItems.length})</span>
+                                              </div>
+
+                                              {/* Pacientes de este servicio */}
+                                              <div className="divide-y divide-slate-100/60 pl-3">
+                                                {svcItems.map(item => {
+                                                  const isDischarged = item.status === 'discharged';
+                                                  const parsed = parsePegPatientData(item);
+                                                  return (
+                                                    <div key={item.id} className="py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs hover:bg-slate-50/60 p-1.5 rounded-xl transition-colors">
+                                                      <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                          <span className="text-slate-900 font-bold text-xs break-words">{parsed.cleanName}</span>
+                                                          {isDischarged ? (
+                                                            <span className="px-2.5 py-0.5 rounded-full text-[8.5px] font-black bg-rose-100 text-rose-800 border border-rose-200">
+                                                              {"🔴 DE ALTA (Sobrante: " + (item.leftover_sobres || 0).toFixed(1) + " sobres)"}
+                                                            </span>
+                                                          ) : (
+                                                            <span className="px-2.5 py-0.5 rounded-full text-[8.5px] font-black bg-slate-100 text-slate-600 border border-slate-200">
+                                                              ⚪ SIN STOCK (Agotado)
+                                                            </span>
+                                                          )}
+                                                        </div>
+                                                        <div className="text-[10px] text-slate-500 font-medium flex items-center gap-2 flex-wrap mt-0.5">
+                                                          <span>Entregados: <strong>{item.cantidad_entregada} sobres</strong></span>
+                                                          <span>•</span>
+                                                          <span>Dosis: <strong>{item.dosis_gramos_dia}g/toma</strong></span>
+                                                          <span>•</span>
+                                                          <span>Horarios: <strong className="text-purple-600">{parsed.schedules.join(', ')}</strong></span>
+                                                          {isDischarged && item.discharge_date && (
+                                                            <>
+                                                              <span>•</span>
+                                                              <span className="text-slate-600 font-semibold">Fecha Alta: <strong>{item.discharge_date}</strong></span>
+                                                            </>
+                                                          )}
+                                                        </div>
+                                                      </div>
+
+                                                      <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
+                                                        <button
+                                                          onClick={() => {
+                                                            setEditingPeg(item);
+                                                            setNewPegForm({
+                                                              paciente_cama: parsed.cleanName,
+                                                              cantidad_entregada: item.cantidad_entregada,
+                                                              dosis_gramos_dia: item.dosis_gramos_dia,
+                                                              dosis_inicio_gramos: item.dosis_inicio_gramos,
+                                                              fecha_entrega: item.fecha_entrega,
+                                                              fecha_inicio_uso: item.fecha_inicio_uso,
+                                                              servicio: item.servicio
+                                                            });
+                                                            setPegStartHour(parsed.startHour);
+                                                            setPegSchedulesStr(parsed.schedules.join(', '));
+                                                          }}
+                                                          className="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors border-none bg-transparent cursor-pointer"
+                                                          title="Editar datos del paciente"
+                                                        >
+                                                          <Edit3 className="w-3.5 h-3.5" />
+                                                        </button>
+                                                        <button
+                                                          onClick={() => handleReactivatePegPatient(item)}
+                                                          className="px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg transition-all text-[10px] shadow-sm border-none cursor-pointer flex items-center gap-1"
+                                                          title="Reactivar a este paciente para una nueva estadía"
+                                                        >
+                                                          <span>↩️</span>
+                                                          <span>Reactivar</span>
+                                                        </button>
+                                                        <button
+                                                          onClick={() => handleDeletePegDelivery(item.id)}
+                                                          className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors border-none bg-transparent cursor-pointer"
+                                                          title="Eliminar del historial"
+                                                        >
+                                                          <Trash2 className="w-3.5 h-3.5" />
+                                                        </button>
+                                                      </div>
                                                     </div>
-                                                    <div className="text-[10px] text-slate-400 font-medium">
-                                                      Entregados: {item.cantidad_entregada} sobres • Dosis: {item.dosis_gramos_dia}g/toma • Horarios: <strong className="text-purple-600">{parsePegPatientData(item).schedules.join(', ')}</strong>
-                                                      {isDischarged && item.discharge_date && (" • Fecha Alta: " + item.discharge_date)}
-                                                    </div>
-                                                  </div>
-
-                                                  <div className="flex items-center gap-1 shrink-0">
-                                                    <button
-                                                      onClick={() => {
-                                                        const parsed = parsePegPatientData(item);
-                                                        setEditingPeg(item);
-                                                        setNewPegForm({
-                                                          paciente_cama: parsed.cleanName,
-                                                          cantidad_entregada: item.cantidad_entregada,
-                                                          dosis_gramos_dia: item.dosis_gramos_dia,
-                                                          dosis_inicio_gramos: item.dosis_inicio_gramos,
-                                                          fecha_entrega: item.fecha_entrega,
-                                                          fecha_inicio_uso: item.fecha_inicio_uso,
-                                                          servicio: item.servicio
-                                                        });
-                                                        setPegStartHour(parsed.startHour);
-                                                        setPegSchedulesStr(parsed.schedules.join(', '));
-                                                      }}
-                                                      className="p-1 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors border-none bg-transparent cursor-pointer"
-                                                      title="Editar datos del paciente"
-                                                    >
-                                                      <Edit3 className="w-3.5 h-3.5" />
-                                                    </button>
-                                                    <button
-                                                      onClick={() => handleQuickAddSobres(item)}
-                                                      className="px-2 py-1 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg transition-all text-[9px] border-none cursor-pointer"
-                                                      title="Agregar más sobres de PEG entregados (recarga rápida)"
-                                                    >
-                                                      ➕ PEG
-                                                    </button>
-                                                    <button
-                                                      onClick={() => handleReactivatePegPatient(item)}
-                                                      className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold rounded-lg transition-all text-[9px] border border-slate-200 cursor-pointer"
-                                                      title="Reactivar y devolver a seguimiento de stock activo"
-                                                    >
-                                                      Reactivar
-                                                    </button>
-                                                    <button
-                                                      onClick={() => handleDeletePegDelivery(item.id)}
-                                                      className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors border-none bg-transparent cursor-pointer"
-                                                      title="Eliminar de historial"
-                                                    >
-                                                      <Trash2 className="w-3.5 h-3.5" />
-                                                    </button>
-                                                  </div>
-                                                </div>
-                                              );
-                                            })}
-                                          </div>
-                                        </div>
-                                      );
-                                    });
-                                  })()}
+                                                  );
+                                                })}
+                                              </div>
+                                            </div>
+                                          );
+                                        });
+                                      })()}
+                                    </div>
+                                  )}
                                 </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </>
-                );
+                              );
+                            })}
+                          </div>
+                        )}
+                      </>
+                    );
                   })()}
                 </div>
               </div>
