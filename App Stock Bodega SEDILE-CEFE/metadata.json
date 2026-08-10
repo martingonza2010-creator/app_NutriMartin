@@ -1,0 +1,7 @@
+﻿{
+  "name": "App NutriMartin",
+  "description": "Tu asistente personal de nutriciÃ³n impulsado por IA. Analiza tus comidas con fotos, genera planes dietÃ©ticos personalizados y chatea con Martin para alcanzar tus objetivos de salud.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

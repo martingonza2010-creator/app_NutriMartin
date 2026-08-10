@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="logo.png" type="image/png">
+  <title>STOCK SEDILE 2026 - Central de Bodega</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Poppins', sans-serif;
+      background-color: #f0fdf4;
+      /* emerald-50 */
+    }
+
+    /* Hide scrollbar for Chrome, Safari and Opera */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+
+    /* Hide scrollbar for IE, Edge and Firefox */
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      /* IE and Edge */
+      scrollbar-width: none;
+      /* Firefox */
+    }
+
+    /* App Utilities & Animations */
+    .pb-safe {
+      padding-bottom: env(safe-area-inset-bottom, 20px);
+    }
+
+    .perspective-1000 {
+      perspective: 1000px;
+    }
+
+    .transform-style-3d {
+      transform-style: preserve-3d;
+    }
+
+    .backface-hidden {
+      backface-visibility: hidden;
+    }
+
+    .rotate-y-180 {
+      transform: rotateY(180deg);
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+      }
+
+      to {
+        opacity: 1;
+      }
+    }
+
+    @keyframes slideUp {
+      from {
+        transform: translateY(20px);
+        opacity: 0;
+      }
+
+      to {
+        transform: translateY(0);
+        opacity: 1;
+      }
+    }
+
+    .animate-fade-in {
+      animation: fadeIn 0.4s ease-out forwards;
+    }
+
+    .animate-slide-up {
+      animation: slideUp 0.4s ease-out forwards;
+    }
+
+    /* Print Optimizations */
+    @media print {
+
+      .no-print,
+      nav,
+      .bottom-nav,
+      button:not(.print-visible) {
+        display: none !important;
+      }
+
+      body {
+        background-color: white !important;
+        padding: 0 !important;
+      }
+
+      .bg-gradient-to-br {
+        background: #10b981 !important;
+        /* fallback for print */
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+
+      .shadow-xl,
+      .shadow-sm {
+        box-shadow: none !important;
+        border: 1px solid #eee !important;
+      }
+    }
+  </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://aistudiocdn.com/react@^19.2.1",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
+    "react/": "https://aistudiocdn.com/react@^19.2.1/",
+    "recharts": "https://aistudiocdn.com/recharts@^3.5.1",
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.556.0",
+    "@google/generative-ai": "https://esm.sh/@google/generative-ai@0.24.1",
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.39.3",
+    "firebase/": "https://aistudiocdn.com/firebase@^12.6.0/"
+  }
+}
+</script>
+  <link rel="manifest" href="/manifest.json">
+</head>
+
+<body>
+  <div id="root"></div>
+  <script>
+    window.deferredPrompt = null;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      window.deferredPrompt = e;
+      window.dispatchEvent(new Event('pwa-installable'));
+    });
+
+    // --- Dynamic Circular Favicon Logic ---
+    function applyCircularFavicon() {
+      const link = document.querySelector("link[rel*='icon']") || document.createElement('link');
+      link.type = 'image/png';
+      link.rel = 'icon';
+      document.head.appendChild(link);
+
+      const img = new Image();
+      img.src = '/logo.png'; // Ensure this path is correct in public/
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 64;
+        canvas.height = 64;
+        const ctx = canvas.getContext('2d');
+
+        // Draw Circle
+        ctx.beginPath();
+        ctx.arc(32, 32, 32, 0, 2 * Math.PI);
+        ctx.closePath();
+        ctx.clip();
+
+        // Draw Image
+        ctx.drawImage(img, 0, 0, 64, 64);
+
+        // Add white border for visibility on dark tabs
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = '#ffffff';
+        ctx.stroke();
+
+        link.href = canvas.toDataURL();
+      };
+    }
+
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        applyCircularFavicon(); // Call it on load
+        navigator.serviceWorker.register('/sw.js')
+          .then(reg => console.log('SW registered', reg))
+          .catch(err => console.log('SW error', err));
+      });
+    } else {
+      window.addEventListener('load', applyCircularFavicon);
+    }
+  </script>
+  <script type="module" src="/index.tsx"></script>
+</body>
+
+</html>

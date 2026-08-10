@@ -395,21 +395,12 @@ const parsePegPatientData = (item: any) => {
   let cleanName = raw;
   let startHour = '06:00';
   let rawSchedules: string[] = ['06:00', '16:00', '18:00'];
-  let tomasHistoricas = Number(item?.tomas_historicas) || 0;
   const defaultDose = Number(item.dosis_gramos_dia) || 0;
   
   const lastBracketIndex = raw.lastIndexOf(' [');
   if (lastBracketIndex !== -1 && raw.endsWith(']')) {
     cleanName = raw.substring(0, lastBracketIndex).trim();
-    let bracketsContent = raw.substring(lastBracketIndex + 2, raw.length - 1);
-    
-    if (bracketsContent.includes('#')) {
-      const parts = bracketsContent.split('#');
-      bracketsContent = parts[0].trim();
-      const parsedH = parseInt(parts[1].trim());
-      if (!isNaN(parsedH)) tomasHistoricas = parsedH;
-    }
-
+    const bracketsContent = raw.substring(lastBracketIndex + 2, raw.length - 1);
     if (bracketsContent.includes(' | ')) {
       const parts = bracketsContent.split(' | ');
       startHour = parts[0].trim();
@@ -446,29 +437,27 @@ const parsePegPatientData = (item: any) => {
     schedules,
     scheduleDetails,
     hasCustomDoses,
-    totalDailyGrams,
-    tomasHistoricas
+    totalDailyGrams
   };
 };
 
 const calculateConsumedGrams = (item: any, isPaused: boolean = false) => {
-  const { startHour, scheduleDetails, totalDailyGrams, tomasHistoricas } = parsePegPatientData(item);
-
   if (isPaused || item?.status === 'paused' || item?.status === 'sos' || Number(item?.dosis_gramos_dia) === 0) {
-    return { consumedGrams: 0, dosesPassed: tomasHistoricas };
+    return { consumedGrams: 0, dosesPassed: 0 };
   }
   
+  const { startHour, scheduleDetails, totalDailyGrams } = parsePegPatientData(item);
   const startDateStr = item.fecha_inicio_uso;
   if (!startDateStr || !startHour || totalDailyGrams === 0) {
-    return { consumedGrams: 0, dosesPassed: tomasHistoricas };
+    return { consumedGrams: 0, dosesPassed: 0 };
   }
 
   const now = new Date();
   const startDateTime = new Date(`${startDateStr}T${startHour}:00`);
-  if (now < startDateTime) return { consumedGrams: 0, dosesPassed: tomasHistoricas };
+  if (now < startDateTime) return { consumedGrams: 0, dosesPassed: 0 };
 
   let consumedGrams = 0;
-  let dosesPassed = tomasHistoricas;
+  let dosesPassed = 0;
 
   const tempDate = new Date(startDateTime);
   tempDate.setHours(0, 0, 0, 0);
@@ -802,7 +791,7 @@ export default function App() {
     const newTotalSobres = Number((remainingSobres + qty).toFixed(1));
     const now = new Date();
     const hourStr = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
-    const combinedPacienteCama = `${parsed.cleanName} [${hourStr} | ${parsed.schedules.join(',')} #${dosesPassed}]`;
+    const combinedPacienteCama = `${parsed.cleanName} [${hourStr} | ${parsed.schedules.join(',')}]`;
 
     const updatedRecord: PegDelivery = {
       ...item,
@@ -8030,14 +8019,7 @@ export default function App() {
                       });
 
                       const schedulesStrCombined = formattedSchedules.join(',');
-                      let accumulatedDoses = 0;
-                      if (editingPeg) {
-                        const isPausedOrSos = editingPeg.status === 'paused' || editingPeg.status === 'sos' || Number(editingPeg.dosis_gramos_dia) === 0;
-                        const prevCalc = calculateConsumedGrams(editingPeg, isPausedOrSos);
-                        accumulatedDoses = prevCalc.dosesPassed;
-                      }
-
-                      const combinedPacienteCama = `${newPegForm.paciente_cama} [${cleanStartHour} | ${schedulesStrCombined}${accumulatedDoses > 0 ? ` #${accumulatedDoses}` : ''}]`;
+                      const combinedPacienteCama = `${newPegForm.paciente_cama} [${cleanStartHour} | ${schedulesStrCombined}]`;
                       const initialStatus = newPegForm.dosis_gramos_dia === 0 ? 'paused' : ((newPegForm as any).status || 'active');
                       const recordToSend = {
                         ...newPegForm,
@@ -8234,19 +8216,10 @@ export default function App() {
                                   <button
                                     onClick={() => {
                                       const parsed = parsePegPatientData(item);
-                                      const isPausedOrSos = item.status === 'paused' || item.status === 'sos' || Number(item.dosis_gramos_dia) === 0;
-                                      const { consumedGrams } = calculateConsumedGrams(item, isPausedOrSos);
-                                      const totalGrams = item.cantidad_entregada * 17;
-                                      const remainingGrams = Math.max(0, totalGrams - consumedGrams);
-                                      const remainingSobres = Math.round((remainingGrams / 17) * 2) / 2;
-                                      const now = new Date();
-                                      const todayStr = now.toISOString().split('T')[0];
-                                      const nowHour = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
-
                                       setEditingPeg(item);
                                       setNewPegForm({
                                         paciente_cama: parsed.cleanName,
-                                        cantidad_entregada: remainingSobres,
+                                        cantidad_entregada: item.cantidad_entregada,
                                         dosis_gramos_dia: item.dosis_gramos_dia,
                                         dosis_inicio_gramos: item.dosis_inicio_gramos,
                                         fecha_entrega: item.fecha_entrega,
