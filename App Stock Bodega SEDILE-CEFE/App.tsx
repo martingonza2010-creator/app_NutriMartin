@@ -476,7 +476,11 @@ const calculateConsumedGrams = (item: any, isPaused: boolean = false) => {
   const endDateTime = new Date(now);
 
   while (tempDate <= endDateTime) {
-    const dateStr = tempDate.toISOString().split('T')[0];
+    const yyyy = tempDate.getFullYear();
+    const mm = String(tempDate.getMonth() + 1).padStart(2, '0');
+    const dd = String(tempDate.getDate()).padStart(2, '0');
+    const dateStr = `${yyyy}-${mm}-${dd}`;
+
     scheduleDetails.forEach(detail => {
       const cleanHour = detail.hour.trim();
       if (/^\d{2}:\d{2}$/.test(cleanHour)) {
@@ -871,12 +875,19 @@ export default function App() {
     if (!window.confirm("¿Deseas colocar a este paciente en Régimen Cero (Reg Cero)? Se pausará el descuento automático de stock con " + remainingSobres.toFixed(1) + " sobres restantes.")) return;
     
     setLoadingPeg(true);
-    
+    const parsed = parsePegPatientData(item);
+    const isPausedOrSos = item.status === 'paused' || item.status === 'sos' || Number(item.dosis_gramos_dia) === 0;
+    const { dosesPassed } = calculateConsumedGrams(item, isPausedOrSos);
+    const now = new Date();
+    const hourStr = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+    const combinedPacienteCama = `${parsed.cleanName} [${hourStr} | ${parsed.schedules.join(',')} #${dosesPassed}]`;
+
     const updatedRecord: PegDelivery = {
       ...item,
       status: 'paused',
+      paciente_cama: combinedPacienteCama,
       cantidad_entregada: Number(remainingSobres.toFixed(1)),
-      fecha_inicio_uso: new Date().toISOString().split('T')[0]
+      fecha_inicio_uso: now.toISOString().split('T')[0]
     };
     
     await handleUpdatePegDelivery(updatedRecord);
@@ -886,12 +897,19 @@ export default function App() {
     if (!window.confirm("¿Deseas cambiar a este paciente a modalidad SOS (A Pedido)? No se descontará stock automáticamente por horario.")) return;
     
     setLoadingPeg(true);
-    
+    const parsed = parsePegPatientData(item);
+    const isPausedOrSos = item.status === 'paused' || item.status === 'sos' || Number(item.dosis_gramos_dia) === 0;
+    const { dosesPassed } = calculateConsumedGrams(item, isPausedOrSos);
+    const now = new Date();
+    const hourStr = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+    const combinedPacienteCama = `${parsed.cleanName} [${hourStr} | ${parsed.schedules.join(',')} #${dosesPassed}]`;
+
     const updatedRecord: PegDelivery = {
       ...item,
       status: 'sos',
+      paciente_cama: combinedPacienteCama,
       cantidad_entregada: Number(remainingSobres.toFixed(1)),
-      fecha_inicio_uso: new Date().toISOString().split('T')[0]
+      fecha_inicio_uso: now.toISOString().split('T')[0]
     };
     
     await handleUpdatePegDelivery(updatedRecord);
@@ -905,7 +923,9 @@ export default function App() {
     const hourStr = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
     
     const parsed = parsePegPatientData(item);
-    const combinedPacienteCama = `${parsed.cleanName} [${hourStr} | ${parsed.schedules.join(',')}]`;
+    const isPausedOrSos = item.status === 'paused' || item.status === 'sos' || Number(item.dosis_gramos_dia) === 0;
+    const { dosesPassed } = calculateConsumedGrams(item, isPausedOrSos);
+    const combinedPacienteCama = `${parsed.cleanName} [${hourStr} | ${parsed.schedules.join(',')} #${dosesPassed}]`;
     
     const updatedRecord: PegDelivery = {
       ...item,
