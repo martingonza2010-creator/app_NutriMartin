@@ -1,0 +1,7 @@
+{
+  "name": "stock-bodega-sedile-root",
+  "private": true,
+  "scripts": {
+    "build": "cd \"App Stock Bodega SEDILE-CEFE\" && npm install && npm run build"
+  }
+}

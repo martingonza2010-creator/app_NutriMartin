@@ -1,0 +1,7 @@
+{
+  "buildCommand": "cd \"App Stock Bodega SEDILE-CEFE\" && npm install && npm run build",
+  "outputDirectory": "App Stock Bodega SEDILE-CEFE/dist",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
