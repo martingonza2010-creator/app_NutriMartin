@@ -7688,6 +7688,54 @@ export default function App() {
                     </ul>
                   </div>
 
+                  {/* Sección Especial: Cambios y mejoras realizadas 10/08 */}
+                  <div className="mt-4 pt-4 border-t-2 border-indigo-300 bg-gradient-to-br from-purple-50 via-indigo-50 to-purple-100/90 p-4 rounded-2xl space-y-2.5 shadow-sm border">
+                    <h4 className="font-black text-xs uppercase tracking-tight text-indigo-950 flex items-center gap-2">
+                      <span className="text-base">🚀</span>
+                      <span>Cambios y mejoras realizadas 10/08</span>
+                    </h4>
+                    <p className="text-[11px] text-indigo-950 font-bold leading-relaxed">
+                      Resumen de auditoría de precisión y nuevas correcciones de cálculo aplicadas al módulo de PEG Pediatría:
+                    </p>
+                    
+                    <div className="space-y-2 text-[10px] text-slate-700">
+                      <div className="bg-white p-2.5 rounded-xl border border-indigo-100 shadow-sm space-y-1">
+                        <strong className="text-indigo-900 text-[11px] block">1. Preservación del Historial de Tomas Administradas:</strong>
+                        <p className="leading-relaxed text-slate-600">
+                          Al hacer clic en <strong>Editar (✏️)</strong> en cualquier paciente registrado, el contador de tomas administradas ya <strong>NUNCA se reinicia a 0</strong>. Preserva de forma persistente todas sus tomas acumuladas anteriores y continúa sumando.
+                        </p>
+                      </div>
+
+                      <div className="bg-white p-2.5 rounded-xl border border-indigo-100 shadow-sm space-y-1">
+                        <strong className="text-indigo-900 text-[11px] block">2. Sin Descuentos Retroactivos al Editar Sobres:</strong>
+                        <p className="leading-relaxed text-slate-600">
+                          El campo "Sobres" al editar se abre pre-llenado automáticamente con los <strong>Sobres Restantes Disponibles hoy</strong>. Al guardar una nueva cifra (ej: <code>6</code> sobres), el paciente mantendrá exactamente <strong>6.0 sobres (102.0g)</strong> disponibles desde ese minuto exacto sin restar de forma retroactiva dosis pasadas.
+                        </p>
+                      </div>
+
+                      <div className="bg-white p-2.5 rounded-xl border border-indigo-100 shadow-sm space-y-1">
+                        <strong className="text-indigo-900 text-[11px] block">3. Corrección de Zona Horaria (Causa Raíz de Descuadres):</strong>
+                        <p className="leading-relaxed text-slate-600">
+                          Se corrigió la conversión UTC a medianoche que desfasaba el cálculo en 24 horas. Las fechas y horarios de conteo trabajan 100% en tiempo local de Chile (<code>YYYY-MM-DD</code> local), eliminando descuadres espontáneos a la medianoche.
+                        </p>
+                      </div>
+
+                      <div className="bg-white p-2.5 rounded-xl border border-indigo-100 shadow-sm space-y-1">
+                        <strong className="text-indigo-900 text-[11px] block">4. Transiciones Continuas en Reg Cero, SOS y Realimentar:</strong>
+                        <p className="leading-relaxed text-slate-600">
+                          Al alternar entre <strong>Reg Cero</strong>, <strong>SOS</strong> y <strong>Realimentar (Activo)</strong>, el sistema congela y reanuda exactamente el stock disponible y las tomas acumuladas sin descalzar el remanente.
+                        </p>
+                      </div>
+
+                      <div className="bg-white p-2.5 rounded-xl border border-indigo-100 shadow-sm space-y-1">
+                        <strong className="text-indigo-900 text-[11px] block">5. Interfaz Adaptativa para Pantallas Anchas:</strong>
+                        <p className="leading-relaxed text-slate-600">
+                          El panel de PEG y la vista principal se expanden dinámicamente en computadores y monitores de escritorio (hasta <code>96%</code> del ancho de pantalla), mejorando la visibilidad del seguimiento de stock.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Sección Especial: Cambios y mejoras realizadas 04/08 */}
                   <div className="mt-4 pt-4 border-t-2 border-purple-200 bg-purple-50/80 p-4 rounded-2xl space-y-2.5">
                     <h4 className="font-black text-xs uppercase tracking-tight text-purple-950 flex items-center gap-2">
