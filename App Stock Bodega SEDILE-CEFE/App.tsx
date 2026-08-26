@@ -611,6 +611,52 @@ export default function App() {
   const [useCustomScheduleDoses, setUseCustomScheduleDoses] = useState<boolean>(false);
   const [customScheduleDoses, setCustomScheduleDoses] = useState<Record<string, number>>({});
 
+  // --- Bitácora de Auditoría de Movimientos por Paciente ---
+  const [pegAuditLogs, setPegAuditLogs] = useState<{
+    id: string;
+    delivery_id: string;
+    fecha_hora: string;
+    tipo: 'inicial' | 'recarga' | 'reg_cero' | 'sos' | 'activo' | 'edicion' | 'alta' | 'reactivacion';
+    titulo: string;
+    detalle: string;
+  }[]>(() => {
+    try {
+      const saved = localStorage.getItem('peg_audit_logs_v1');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+  const [selectedPegAuditPatient, setSelectedPegAuditPatient] = useState<PegDelivery | null>(null);
+  const [showPegAuditModal, setShowPegAuditModal] = useState<boolean>(false);
+
+  const addPegAuditLog = (deliveryId: string, tipo: 'inicial' | 'recarga' | 'reg_cero' | 'sos' | 'activo' | 'edicion' | 'alta' | 'reactivacion', titulo: string, detalle: string) => {
+    const now = new Date();
+    const dd = String(now.getDate()).padStart(2, '0');
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const yyyy = now.getFullYear();
+    const hh = String(now.getHours()).padStart(2, '0');
+    const min = String(now.getMinutes()).padStart(2, '0');
+    const fechaHoraStr = `${dd}/${mm}/${yyyy} - ${hh}:${min} hrs`;
+
+    const newLog = {
+      id: 'log_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+      delivery_id: deliveryId,
+      fecha_hora: fechaHoraStr,
+      tipo,
+      titulo,
+      detalle
+    };
+
+    setPegAuditLogs(prev => {
+      const updated = [newLog, ...prev];
+      try {
+        localStorage.setItem('peg_audit_logs_v1', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+  };
+
 
 
   const handleVerifyPegPin = () => {
@@ -785,7 +831,7 @@ export default function App() {
     setLoadingPeg(true);
     
     const isPausedOrSos = item.status === 'paused' || item.status === 'sos' || Number(item.dosis_gramos_dia) === 0;
-    const { consumedGrams } = calculateConsumedGrams(item, isPausedOrSos);
+    const { consumedGrams, dosesPassed } = calculateConsumedGrams(item, isPausedOrSos);
     const totalGrams = item.cantidad_entregada * 17;
     const remainingGrams = Math.max(0, totalGrams - consumedGrams);
     const remainingSobres = Math.round((remainingGrams / 17) * 2) / 2;
@@ -793,7 +839,11 @@ export default function App() {
     const newTotalSobres = Number((remainingSobres + qty).toFixed(1));
     const now = new Date();
     const hourStr = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
-    const combinedPacienteCama = `${parsed.cleanName} [${hourStr} | ${parsed.schedules.join(',')}]`;
+    
+    // Preservar tomas pasadas acumuladas y horarios diferenciados
+    const customSchedulesCombined = parsed.scheduleDetails.map(d => `${d.hour}@${d.doseGrams}`).join(',');
+    const schedulesToSave = parsed.hasCustomDoses ? customSchedulesCombined : parsed.schedules.join(',');
+    const combinedPacienteCama = `${parsed.cleanName} [${hourStr} | ${schedulesToSave}${dosesPassed > 0 ? ` #${dosesPassed}` : ''}]`;
 
     const updatedRecord: PegDelivery = {
       ...item,
@@ -807,6 +857,12 @@ export default function App() {
     };
 
     await handleUpdatePegDelivery(updatedRecord);
+    addPegAuditLog(
+      item.id,
+      'recarga',
+      'Recarga Rápida de Sobres (➕ PEG)',
+      `Se entregaron +${qty} sobres nuevos. Stock disponible resultante: ${newTotalSobres} sobres (Tomas acumuladas preservadas: ${dosesPassed} tomas).`
+    );
     showToast("Se agregaron " + qty + " sobres con éxito. Stock disponible: " + newTotalSobres + " sobres.", "success");
   };
 
@@ -824,6 +880,12 @@ export default function App() {
     };
 
     await handleUpdatePegDelivery(updatedRecord);
+    addPegAuditLog(
+      item.id,
+      'alta',
+      'Alta Médica del Paciente',
+      `Alta registrada en sistema. Se calcularon y devolvieron ${roundedLeftovers.toFixed(1)} sobres sobrantes al pozo de excedentes de bodega.`
+    );
   };
 
   const handleReactivatePegPatient = async (item: PegDelivery) => {
@@ -845,7 +907,9 @@ export default function App() {
     setLoadingPeg(true);
     const now = new Date();
     const hourStr = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
-    const combinedPacienteCama = `${parsed.cleanName} [${hourStr} | ${parsed.schedules.join(',')}]`;
+    const customSchedulesCombined = parsed.scheduleDetails.map(d => `${d.hour}@${d.doseGrams}`).join(',');
+    const schedulesToSave = parsed.hasCustomDoses ? customSchedulesCombined : parsed.schedules.join(',');
+    const combinedPacienteCama = `${parsed.cleanName} [${hourStr} | ${schedulesToSave}]`;
 
     const updatedRecord: PegDelivery = {
       ...item,
@@ -859,6 +923,12 @@ export default function App() {
     };
 
     await handleUpdatePegDelivery(updatedRecord);
+    addPegAuditLog(
+      item.id,
+      'reactivacion',
+      'Reactivación de Paciente',
+      `Paciente reactivado desde el historial de altas con ${qty} sobres entregados para su nueva estadía hospitalaria.`
+    );
     showToast(`Paciente ${parsed.cleanName} reactivado con éxito (${qty} sobres).`, "success");
   };
 
@@ -882,6 +952,12 @@ export default function App() {
     };
     
     await handleUpdatePegDelivery(updatedRecord);
+    addPegAuditLog(
+      item.id,
+      'reg_cero',
+      'Pausado a Régimen Cero',
+      `El paciente entró en Régimen Cero. Conteo automático pausado con ${remainingSobres.toFixed(1)} sobres restantes (${dosesPassed} tomas administradas acumuladas).`
+    );
   };
 
   const handleSosPegPatient = async (item: PegDelivery, remainingSobres: number) => {
@@ -904,6 +980,12 @@ export default function App() {
     };
     
     await handleUpdatePegDelivery(updatedRecord);
+    addPegAuditLog(
+      item.id,
+      'sos',
+      'Modalidad SOS (A Pedido)',
+      `Cambiado a modalidad SOS / A Pedido. Conteo automático por horario pausado con ${remainingSobres.toFixed(1)} sobres restantes.`
+    );
   };
 
   const handleResumePegPatient = async (item: PegDelivery) => {
@@ -926,6 +1008,12 @@ export default function App() {
     };
     
     await handleUpdatePegDelivery(updatedRecord);
+    addPegAuditLog(
+      item.id,
+      'activo',
+      'Realimentar / Conteo Activo',
+      `Alimentación reanudada a las ${hourStr} hrs. Se reanuda el descuento de stock con ${item.cantidad_entregada} sobres disponibles.`
+    );
   };
 
   useEffect(() => {
@@ -7801,6 +7889,149 @@ export default function App() {
               </div>
             )}
 
+            {/* Modal de Bitácora / Historial de Movimientos de Paciente */}
+            {showPegAuditModal && selectedPegAuditPatient && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+                <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl border border-purple-100 flex flex-col max-h-[85vh] overflow-hidden animate-scale-in">
+                  {/* Cabecera */}
+                  <div className="bg-gradient-to-r from-purple-700 to-indigo-900 text-white px-5 py-3.5 flex items-center justify-between shrink-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">📜</span>
+                      <div>
+                        <h3 className="font-extrabold text-sm tracking-tight text-white flex items-center gap-2">
+                          <span>Bitácora de Movimientos</span>
+                        </h3>
+                        <p className="text-[10px] text-purple-200 font-medium">
+                          {parsePegPatientData(selectedPegAuditPatient).cleanName} • {selectedPegAuditPatient.servicio}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setShowPegAuditModal(false);
+                        setSelectedPegAuditPatient(null);
+                      }}
+                      className="text-white/80 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors border-none bg-transparent cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Resumen del paciente */}
+                  {(() => {
+                    const isPausedOrSos = selectedPegAuditPatient.status === 'paused' || selectedPegAuditPatient.status === 'sos' || Number(selectedPegAuditPatient.dosis_gramos_dia) === 0;
+                    const { consumedGrams, dosesPassed } = calculateConsumedGrams(selectedPegAuditPatient, isPausedOrSos);
+                    const totalGrams = selectedPegAuditPatient.cantidad_entregada * 17;
+                    const remainingGrams = Math.max(0, totalGrams - consumedGrams);
+                    const remainingSobres = Math.round((remainingGrams / 17) * 2) / 2;
+
+                    const patientLogs = pegAuditLogs.filter(l => l.delivery_id === selectedPegAuditPatient.id);
+
+                    const displayLogs = patientLogs.length > 0 ? patientLogs : [
+                      {
+                        id: 'initial_fallback',
+                        delivery_id: selectedPegAuditPatient.id,
+                        fecha_hora: `${selectedPegAuditPatient.fecha_entrega} (Registro Inicial)`,
+                        tipo: 'inicial' as const,
+                        titulo: 'Entrega Inicial de PEG',
+                        detalle: `Registro inicial de ${selectedPegAuditPatient.cantidad_entregada} sobres (${selectedPegAuditPatient.cantidad_entregada * 17}g). Dosis: ${selectedPegAuditPatient.dosis_gramos_dia}g/toma.`
+                      }
+                    ];
+
+                    return (
+                      <div className="p-4 overflow-y-auto space-y-4 flex-1">
+                        {/* Estado actual resumen */}
+                        <div className="bg-purple-50/70 border border-purple-100 p-3 rounded-2xl flex items-center justify-between gap-2 text-xs">
+                          <div>
+                            <span className="text-[9px] font-bold text-purple-600 uppercase tracking-wider block">Estado Actual</span>
+                            <span className="font-extrabold text-slate-800">
+                              {selectedPegAuditPatient.status === 'active' ? '🟢 Activo' :
+                               selectedPegAuditPatient.status === 'paused' ? '⏸️ Régimen Cero' :
+                               selectedPegAuditPatient.status === 'sos' ? '🆘 SOS (A Pedido)' :
+                               '🔴 De Alta'}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-[9px] font-bold text-purple-600 uppercase tracking-wider block">Stock Restante</span>
+                            <span className="font-black text-purple-900">{remainingSobres.toFixed(1)} sobres</span>
+                          </div>
+                          <div>
+                            <span className="text-[9px] font-bold text-purple-600 uppercase tracking-wider block">Tomas Administradas</span>
+                            <span className="font-extrabold text-slate-800">{dosesPassed} tomas</span>
+                          </div>
+                        </div>
+
+                        {/* Línea de tiempo de eventos */}
+                        <div className="space-y-2">
+                          <h4 className="text-[11px] font-black text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                            <span>⏱️</span>
+                            <span>Historial de Eventos Registrados</span>
+                          </h4>
+
+                          <div className="space-y-2.5 relative before:absolute before:left-3 before:top-2 before:bottom-2 before:w-0.5 before:bg-purple-100 pl-6">
+                            {displayLogs.map(log => {
+                              const badgeStyle = 
+                                log.tipo === 'inicial' ? 'bg-blue-100 text-blue-800 border-blue-200' :
+                                log.tipo === 'recarga' ? 'bg-purple-100 text-purple-800 border-purple-200' :
+                                log.tipo === 'reg_cero' ? 'bg-amber-100 text-amber-800 border-amber-200' :
+                                log.tipo === 'sos' ? 'bg-indigo-100 text-indigo-800 border-indigo-200' :
+                                log.tipo === 'activo' ? 'bg-emerald-100 text-emerald-800 border-emerald-200' :
+                                log.tipo === 'alta' ? 'bg-rose-100 text-rose-800 border-rose-200' :
+                                log.tipo === 'reactivacion' ? 'bg-teal-100 text-teal-800 border-teal-200' :
+                                'bg-slate-100 text-slate-800 border-slate-200';
+
+                              const icon = 
+                                log.tipo === 'inicial' ? '📦' :
+                                log.tipo === 'recarga' ? '➕' :
+                                log.tipo === 'reg_cero' ? '⏸️' :
+                                log.tipo === 'sos' ? '🆘' :
+                                log.tipo === 'activo' ? '▶️' :
+                                log.tipo === 'alta' ? '📋' :
+                                log.tipo === 'reactivacion' ? '↩️' :
+                                '✏️';
+
+                              return (
+                                <div key={log.id} className="relative bg-white p-3 rounded-xl border border-slate-200/70 shadow-xs space-y-1">
+                                  <div className="absolute -left-[19px] top-3.5 w-2 h-2 rounded-full bg-purple-600 ring-4 ring-purple-100" />
+                                  
+                                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                                    <div className="flex items-center gap-1.5">
+                                      <span>{icon}</span>
+                                      <strong className="text-xs text-slate-800 font-bold">{log.titulo}</strong>
+                                    </div>
+                                    <span className={`text-[8.5px] font-bold px-2 py-0.5 rounded-full border ${badgeStyle}`}>
+                                      {log.fecha_hora}
+                                    </span>
+                                  </div>
+
+                                  <p className="text-[10px] text-slate-600 leading-relaxed pl-5">
+                                    {log.detalle}
+                                  </p>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Pie de modal */}
+                  <div className="p-3 bg-slate-50 border-t border-slate-100 flex justify-end shrink-0">
+                    <button
+                      onClick={() => {
+                        setShowPegAuditModal(false);
+                        setSelectedPegAuditPatient(null);
+                      }}
+                      className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer border-none"
+                    >
+                      Cerrar Bitácora
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Pozo de Excedentes Global (KPI Box editable) */}
             <div className="bg-purple-50 border-b border-purple-100 px-6 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
               <div className="flex items-center gap-2.5">
@@ -8480,6 +8711,17 @@ export default function App() {
                                                       </div>
 
                                                       <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
+                                                        <button
+                                                          onClick={() => {
+                                                            setSelectedPegAuditPatient(item);
+                                                            setShowPegAuditModal(true);
+                                                          }}
+                                                          className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition-all text-[10px] border border-slate-200 cursor-pointer flex items-center gap-1"
+                                                          title="Ver bitácora e historial de movimientos de este paciente"
+                                                        >
+                                                          <span>📜</span>
+                                                          <span>Bitácora</span>
+                                                        </button>
                                                         <button
                                                           onClick={() => {
                                                             setEditingPeg(item);
