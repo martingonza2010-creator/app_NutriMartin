@@ -3150,16 +3150,48 @@ export default function App() {
       };
     }).filter(c => c.value > 0);
 
+    // Helper para formatear desglose por envase y volumen (cc)
+    const formatContainersBreakdown = (records: any[]) => {
+      if (!records || records.length === 0) return '0 unidades';
+      
+      const containerMap: Record<string, { units: number; volCc: number }> = {};
+
+      records.forEach(r => {
+        const parsed = parseMermaRecord(r);
+        const cType = parsed.containerType || 'Unidades';
+        if (!containerMap[cType]) {
+          containerMap[cType] = { units: 0, volCc: 0 };
+        }
+        const units = parsed.isLiquid ? 1 : (r.cantidad || 0);
+        const vol = parsed.isLiquid ? (r.cantidad || 0) : 0;
+        containerMap[cType].units += units;
+        containerMap[cType].volCc += vol;
+      });
+
+      const parts = Object.keys(containerMap).map(cType => {
+        const item = containerMap[cType];
+        if (item.volCc > 0) {
+          return `${item.units} ${cType.toLowerCase()} (${item.volCc} cc)`;
+        }
+        return `${item.units} ${cType.toLowerCase()}`;
+      });
+
+      return parts.join(', ');
+    };
+
     // --- Registro de Mermas Calculations ---
     const netMermasRecords = mermasRecords.filter(r => r.motivo !== 'Devolución para reutilizar');
     const reusableMermasRecords = mermasRecords.filter(r => r.motivo === 'Devolución para reutilizar');
-    const totalNetMermasUnits = netMermasRecords.reduce((sum, r) => sum + (r.cantidad || 0), 0);
-    const totalReusableUnits = reusableMermasRecords.reduce((sum, r) => sum + (r.cantidad || 0), 0);
+    const totalNetMermasUnits = netMermasRecords.reduce((sum, r) => sum + (parseMermaRecord(r).isLiquid ? 1 : (r.cantidad || 0)), 0);
+    const totalNetMermasVolCc = netMermasRecords.filter(r => parseMermaRecord(r).isLiquid).reduce((sum, r) => sum + (r.cantidad || 0), 0);
+    const totalReusableUnits = reusableMermasRecords.reduce((sum, r) => sum + (parseMermaRecord(r).isLiquid ? 1 : (r.cantidad || 0)), 0);
 
     const sectionLosses: Record<string, number> = { Enterales: 0, Pediatría: 0, Neonatología: 0 };
     netMermasRecords.forEach(r => {
-      if (sectionLosses[r.seccion] !== undefined) {
-        sectionLosses[r.seccion] += r.cantidad;
+      const baseSec = parseMermaRecord(r).baseSection;
+      const units = parseMermaRecord(r).isLiquid ? 1 : (r.cantidad || 0);
+      if (sectionLosses[baseSec] !== undefined) {
+        sectionLosses[baseSec] += units;
       }
     });
 
@@ -3175,7 +3207,8 @@ export default function App() {
     const reasonLosses: Record<string, number> = {};
     netMermasRecords.forEach(r => {
       const mot = r.motivo || 'Sin motivo';
-      reasonLosses[mot] = (reasonLosses[mot] || 0) + (r.cantidad || 0);
+      const units = parseMermaRecord(r).isLiquid ? 1 : (r.cantidad || 0);
+      reasonLosses[mot] = (reasonLosses[mot] || 0) + units;
     });
 
     let topReason = 'Ninguno';
@@ -3208,22 +3241,24 @@ export default function App() {
       text += `Fecha de reporte: ${new Date().toLocaleDateString('es-CL')}\n\n`;
       
       text += `*PÉRDIDAS POR SECCIÓN (Mermas Netas):*\n`;
-      text += `🏢 Enterales: ${sectionLosses.Enterales} unidades\n`;
-      text += `🏢 Pediatría: ${sectionLosses.Pediatría} unidades\n`;
-      text += `🏢 Neonatología: ${sectionLosses.Neonatología} unidades\n\n`;
-
-      text += `*DESGLOSE POR MOTIVO REAL:*\n`;
-      Object.keys(reasonLosses).forEach(mot => {
-        if (reasonLosses[mot] > 0) {
-          text += `⚠️ ${mot}: ${reasonLosses[mot]} unidades\n`;
-        }
+      ['Enterales', 'Pediatría', 'Neonatología'].forEach(sec => {
+        const secRecords = netMermasRecords.filter(r => parseMermaRecord(r).baseSection === sec);
+        text += `🏢 ${sec}: ${secRecords.length > 0 ? formatContainersBreakdown(secRecords) : '0 unidades'}\n`;
       });
       text += `\n`;
 
-      text += `*Total Mermas Reales:* ${totalNetMermasUnits} unidades.\n\n`;
+      text += `*DESGLOSE POR MOTIVO REAL:*\n`;
+      const uniqueReasons = [...new Set(netMermasRecords.map(r => r.motivo || 'Sin motivo'))];
+      uniqueReasons.forEach(mot => {
+        const motRecords = netMermasRecords.filter(r => (r.motivo || 'Sin motivo') === mot);
+        text += `⚠️ ${mot}: ${formatContainersBreakdown(motRecords)}\n`;
+      });
+      text += `\n`;
+
+      text += `*TOTAL MERMAS REALES:* ${formatContainersBreakdown(netMermasRecords)} (Total: ${totalNetMermasUnits} uds${totalNetMermasVolCc > 0 ? ` / ${totalNetMermasVolCc} cc` : ''}).\n\n`;
       
       text += `*LOGÍSTICA / DISTRIBUCIÓN INEFICIENTE:*\n`;
-      text += `♻️ Devoluciones para Reutilizar: ${totalReusableUnits} unidades (tiempo de traslado perdido).\n`;
+      text += `♻️ Devoluciones para Reutilizar: ${reusableMermasRecords.length > 0 ? formatContainersBreakdown(reusableMermasRecords) : '0 unidades'} (tiempo de traslado perdido).\n`;
 
       navigator.clipboard.writeText(text)
         .then(() => showToast("Reporte formateado copiado para WhatsApp", "success"))
