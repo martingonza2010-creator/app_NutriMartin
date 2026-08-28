@@ -355,7 +355,7 @@ const parseMermaRecord = (r: any) => {
   const containerType = r.producto_unidad ? r.producto_unidad.split(' - ')[0] : '';
   const supplementName = (r.producto_unidad && r.producto_unidad.includes(' - ')) ? r.producto_unidad.split(' - ')[1] : '';
   
-  const isLiquid = ['Mamaderas', 'Vasos con suplemento', 'Vasos con productos especiales', 'Botellines', 'Jugos en caja'].includes(containerType);
+  const isLiquid = ['Mamaderas', 'Vasos con suplemento', 'Vasos con productos especiales', 'Jeringa BIC', 'Jeringa Gavage', 'Botellines', 'Jugos en caja'].includes(containerType) || containerType.includes('Jeringa');
   
   let equivQty = r.cantidad || 0;
   if (isLiquid) {
@@ -363,6 +363,9 @@ const parseMermaRecord = (r: any) => {
       "Mamaderas": 100,
       "Vasos con suplemento": 200,
       "Vasos con productos especiales": 200,
+      "Jeringa BIC": 50,
+      "Jeringa Gavage": 50,
+      "Jeringas": 50,
       "Botellines": 200,
       "Jugos en caja": 200
     };
@@ -1070,7 +1073,8 @@ export default function App() {
       "Mamaderas": 1200,
       "Vasos con suplemento": 900,
       "Vasos con productos especiales": 1500,
-      "Jeringas": 600,
+      "Jeringa BIC": 600,
+      "Jeringa Gavage": 600,
       "Botellines": 2200,
       "Jugos en caja": 700
     };
@@ -2038,7 +2042,7 @@ export default function App() {
     const qtyToAdd = Number(newMerma.cantidad);
     
     // Auto-detectar si es líquido
-    const isLiquid = ['Mamaderas', 'Vasos con suplemento', 'Vasos con productos especiales', 'Botellines', 'Jugos en caja'].includes(newMerma.producto_unidad || '');
+    const isLiquid = ['Mamaderas', 'Vasos con suplemento', 'Vasos con productos especiales', 'Jeringa BIC', 'Jeringa Gavage', 'Botellines', 'Jugos en caja'].includes(newMerma.producto_unidad || '') || (newMerma.producto_unidad || '').includes('Jeringa');
     const supplementVal = isLiquid ? mermaSuplemento : '';
     
     const finalMotivo = newMerma.motivo === 'Otro'
@@ -3726,7 +3730,7 @@ export default function App() {
                     onChange={(e) => {
                       const val = e.target.value as any;
                       setNewMerma(prev => ({ ...prev, producto_unidad: val }));
-                      if (!['Mamaderas', 'Vasos con suplemento', 'Vasos con productos especiales', 'Botellines', 'Jugos en caja'].includes(val)) {
+                      if (!['Mamaderas', 'Vasos con suplemento', 'Vasos con productos especiales', 'Jeringa BIC', 'Jeringa Gavage', 'Botellines', 'Jugos en caja'].includes(val)) {
                         setMermaSuplemento('');
                       }
                     }}
@@ -3735,14 +3739,15 @@ export default function App() {
                     <option value="Mamaderas">Mamaderas</option>
                     <option value="Vasos con suplemento">Vasos con suplemento</option>
                     <option value="Vasos con productos especiales">Vasos con productos especiales</option>
-                    <option value="Jeringas">Jeringas</option>
+                    <option value="Jeringa BIC">Jeringa BIC</option>
+                    <option value="Jeringa Gavage">Jeringa Gavage</option>
                     <option value="Botellines">Botellines</option>
                     <option value="Jugos en caja">Jugos en caja</option>
                   </select>
                 </div>
 
                 {/* Si es líquido, mostrar campo manual de suplemento y campo CC */}
-                {['Mamaderas', 'Vasos con suplemento', 'Vasos con productos especiales', 'Botellines', 'Jugos en caja'].includes(newMerma.producto_unidad || '') ? (
+                {['Mamaderas', 'Vasos con suplemento', 'Vasos con productos especiales', 'Jeringa BIC', 'Jeringa Gavage', 'Botellines', 'Jugos en caja'].includes(newMerma.producto_unidad || '') ? (
                   <>
                     <div className="flex flex-col gap-1">
                       <label className="text-[9px] font-bold text-slate-400 uppercase">Suplemento / Fórmula Mermada</label>
