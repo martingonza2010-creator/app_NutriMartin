@@ -385,18 +385,39 @@ const parseMermaRecord = (r: any) => {
 
 export type FormulaFormat = 'polvo_400g' | 'polvo_800g' | 'polvo_1kg' | 'botellin_200ml' | 'rth_1000ml' | 'rth_500ml';
 
-export const FORMULA_FORMAT_DATA: Record<FormulaFormat, { label: string; ml: number; desc: string }> = {
-  'polvo_400g': { label: 'Tarro Polvo 400g', ml: 2857, desc: 'Dilución 14% (~2.857 ml)' },
-  'polvo_800g': { label: 'Tarro Polvo 800g', ml: 5714, desc: 'Dilución 14% (~5.714 ml)' },
-  'polvo_1kg': { label: 'Bolsa/Tarro 1 kg', ml: 9000, desc: 'Dilución ~11% (~9.000 ml)' },
-  'botellin_200ml': { label: 'Botellín / Caja 200 ml', ml: 200, desc: 'Envase individual (200 ml)' },
-  'rth_1000ml': { label: 'Bolsa RTH 1.000 ml', ml: 1000, desc: 'Enteral líquida (1.000 ml)' },
-  'rth_500ml': { label: 'Bolsa RTH 500 ml', ml: 500, desc: 'Enteral líquida (500 ml)' }
+export const FORMULA_FORMAT_DATA: Record<FormulaFormat, { label: string; ml: number; isPowder: boolean; defaultDil: number }> = {
+  'polvo_400g': { label: 'Tarro Polvo 400g', ml: 2857, isPowder: true, defaultDil: 14 },
+  'polvo_800g': { label: 'Tarro Polvo 800g', ml: 5714, isPowder: true, defaultDil: 14 },
+  'polvo_1kg': { label: 'Bolsa/Tarro 1 kg', ml: 9000, isPowder: true, defaultDil: 11 },
+  'botellin_200ml': { label: 'Botellín / Caja 200 ml', ml: 200, isPowder: false, defaultDil: 100 },
+  'rth_1000ml': { label: 'Bolsa RTH 1.000 ml', ml: 1000, isPowder: false, defaultDil: 100 },
+  'rth_500ml': { label: 'Bolsa RTH 500 ml', ml: 500, isPowder: false, defaultDil: 100 }
+};
+
+export const calculateFormulaYieldMl = (pricing: { formato?: FormulaFormat; dilucion_pct?: number; ml_por_tarro?: number }) => {
+  const fmtKey = (pricing.formato || 'polvo_400g') as FormulaFormat;
+  const isPowder = fmtKey.startsWith('polvo');
+  const dil = Number(pricing.dilucion_pct) || (fmtKey === 'polvo_1kg' ? 11 : 14);
+
+  if (fmtKey === 'polvo_400g') {
+    return Math.round(400 / (dil / 100));
+  }
+  if (fmtKey === 'polvo_800g') {
+    return Math.round(800 / (dil / 100));
+  }
+  if (fmtKey === 'polvo_1kg') {
+    return Math.round(1000 / (dil / 100));
+  }
+  if (fmtKey === 'rth_1000ml') return 1000;
+  if (fmtKey === 'rth_500ml') return 500;
+  if (fmtKey === 'botellin_200ml') return 200;
+  return pricing.ml_por_tarro || 2857;
 };
 
 export interface FormulaPricing {
   precio_tarro: number;
   formato?: FormulaFormat;
+  dilucion_pct?: number;
   ml_por_tarro?: number;
 }
 
@@ -405,35 +426,33 @@ const getMermaCost = (r: any, formulaPricings: Record<string, FormulaPricing> | 
   const formulaName = (parsed.supplementName || '').trim();
   const containerType = (parsed.containerType || '').trim();
   
-  let pricing: { precio_tarro: number; ml_por_tarro: number; formato?: FormulaFormat } | undefined = undefined;
+  let pricing: { precio_tarro: number; ml_por_tarro?: number; formato?: FormulaFormat; dilucion_pct?: number } | undefined = undefined;
   
   if (formulaName) {
     if (formulaPricings[formulaName]) {
       const p = formulaPricings[formulaName];
-      pricing = typeof p === 'number' ? { precio_tarro: p, ml_por_tarro: 2857 } : p;
+      pricing = typeof p === 'number' ? { precio_tarro: p, ml_por_tarro: 2857, dilucion_pct: 14 } : p;
     } else {
       const matchKey = Object.keys(formulaPricings).find(k => 
         formulaName.toLowerCase().includes(k.toLowerCase()) || k.toLowerCase().includes(formulaName.toLowerCase())
       );
       if (matchKey) {
         const p = formulaPricings[matchKey];
-        pricing = typeof p === 'number' ? { precio_tarro: p, ml_por_tarro: 2857 } : p;
+        pricing = typeof p === 'number' ? { precio_tarro: p, ml_por_tarro: 2857, dilucion_pct: 14 } : p;
       }
     }
   }
   
   if (!pricing && containerType && formulaPricings[containerType]) {
     const p = formulaPricings[containerType];
-    pricing = typeof p === 'number' ? { precio_tarro: p, ml_por_tarro: 2857 } : p;
+    pricing = typeof p === 'number' ? { precio_tarro: p, ml_por_tarro: 2857, dilucion_pct: 14 } : p;
   }
   
   if (!pricing) {
-    pricing = { precio_tarro: 8500, ml_por_tarro: 2857, formato: 'polvo_400g' };
+    pricing = { precio_tarro: 8500, ml_por_tarro: 2857, formato: 'polvo_400g', dilucion_pct: 14 };
   }
   
-  const totalMlYield = pricing.formato && FORMULA_FORMAT_DATA[pricing.formato] 
-    ? FORMULA_FORMAT_DATA[pricing.formato].ml 
-    : (pricing.ml_por_tarro || 2857);
+  const totalMlYield = calculateFormulaYieldMl(pricing);
   
   const volMl = parsed.isLiquid ? (r.cantidad || 0) : ((r.cantidad || 0) * 100);
   const costPerMl = (pricing.precio_tarro || 0) / Math.max(1, totalMlYield);
@@ -7548,24 +7567,31 @@ export default function App() {
                               {Object.keys(formulaPricings)
                                 .filter(key => !formulaSearchTerm.trim() || key.toLowerCase().includes(formulaSearchTerm.toLowerCase()))
                                 .map((key) => {
-                                  const item = formulaPricings[key] || { precio_tarro: 0, formato: 'polvo_400g', ml_por_tarro: 2857 };
+                                  const item = formulaPricings[key] || { precio_tarro: 0, formato: 'polvo_400g', dilucion_pct: 14, ml_por_tarro: 2857 };
                                   const fmtKey = (item.formato || 'polvo_400g') as FormulaFormat;
                                   const fmtData = FORMULA_FORMAT_DATA[fmtKey] || FORMULA_FORMAT_DATA['polvo_400g'];
-                                  const totalMlYield = fmtData.ml;
+                                  const isPowder = fmtData.isPowder;
+                                  const dilVal = item.dilucion_pct || fmtData.defaultDil;
+                                  const totalMlYield = calculateFormulaYieldMl({ formato: fmtKey, dilucion_pct: dilVal });
                                   const costPerMl = (item.precio_tarro || 0) / Math.max(1, totalMlYield);
 
                                   return (
-                                    <div key={key} className="p-2.5 bg-slate-50/70 border border-slate-200/80 rounded-xl space-y-1.5 hover:bg-slate-100/50 transition-colors">
+                                    <div key={key} className="p-2.5 bg-slate-50/70 border border-slate-200/80 rounded-xl space-y-2 hover:bg-slate-100/50 transition-colors">
                                       <div className="flex items-center justify-between gap-2">
                                         <strong className="text-xs text-slate-800 font-bold truncate" title={key}>{key}</strong>
-                                        <span className="text-[9px] font-mono font-black text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md border border-purple-100">
-                                          ${costPerMl.toFixed(2)} / ml
-                                        </span>
+                                        <div className="flex items-center gap-1.5 shrink-0">
+                                          <span className="text-[8.5px] text-slate-400 font-semibold font-mono">
+                                            ({totalMlYield.toLocaleString('es-CL')} ml)
+                                          </span>
+                                          <span className="text-[9.5px] font-mono font-black text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md border border-purple-100">
+                                            ${costPerMl.toFixed(2)} / ml
+                                          </span>
+                                        </div>
                                       </div>
 
-                                      <div className="grid grid-cols-2 gap-2 text-[10px]">
+                                      <div className={`grid ${isPowder ? 'grid-cols-3' : 'grid-cols-2'} gap-2 text-[10px]`}>
                                         <div>
-                                          <span className="text-slate-400 font-semibold block text-[8.5px] uppercase">Precio Tarro/Envase</span>
+                                          <span className="text-slate-400 font-semibold block text-[8.5px] uppercase">Precio Tarro</span>
                                           <div className="relative mt-0.5">
                                             <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 font-bold font-mono">$</span>
                                             <input
@@ -7582,7 +7608,8 @@ export default function App() {
                                                       ...prev[key],
                                                       precio_tarro: val,
                                                       formato: prev[key]?.formato || 'polvo_400g',
-                                                      ml_por_tarro: fmtData.ml
+                                                      dilucion_pct: prev[key]?.dilucion_pct || fmtData.defaultDil,
+                                                      ml_por_tarro: totalMlYield
                                                     }
                                                   };
                                                   try {
@@ -7591,25 +7618,28 @@ export default function App() {
                                                   return updated;
                                                 });
                                               }}
-                                              className="w-full pl-5 pr-2 py-1 bg-white border border-slate-200 rounded-lg font-bold text-slate-700 font-mono text-right focus:outline-none focus:ring-1 focus:ring-purple-500"
+                                              className="w-full pl-5 pr-1.5 py-1 bg-white border border-slate-200 rounded-lg font-bold text-slate-700 font-mono text-right focus:outline-none focus:ring-1 focus:ring-purple-500 text-[10px]"
                                             />
                                           </div>
                                         </div>
 
                                         <div>
-                                          <span className="text-slate-400 font-semibold block text-[8.5px] uppercase">Formato / Rendimiento</span>
+                                          <span className="text-slate-400 font-semibold block text-[8.5px] uppercase">Formato</span>
                                           <select
                                             value={fmtKey}
                                             onChange={(e) => {
                                               const newFmt = e.target.value as FormulaFormat;
                                               const newFmtData = FORMULA_FORMAT_DATA[newFmt] || FORMULA_FORMAT_DATA['polvo_400g'];
+                                              const newDil = newFmtData.defaultDil;
+                                              const newYield = calculateFormulaYieldMl({ formato: newFmt, dilucion_pct: newDil });
                                               setFormulaPricings(prev => {
                                                 const updated = {
                                                   ...prev,
                                                   [key]: {
                                                     precio_tarro: prev[key]?.precio_tarro || 0,
                                                     formato: newFmt,
-                                                    ml_por_tarro: newFmtData.ml
+                                                    dilucion_pct: newDil,
+                                                    ml_por_tarro: newYield
                                                   }
                                                 };
                                                 try {
@@ -7618,15 +7648,53 @@ export default function App() {
                                                 return updated;
                                               });
                                             }}
-                                            className="w-full mt-0.5 px-2 py-1 bg-white border border-slate-200 rounded-lg font-bold text-slate-700 text-[9px] focus:outline-none focus:ring-1 focus:ring-purple-500"
+                                            className="w-full mt-0.5 px-1.5 py-1 bg-white border border-slate-200 rounded-lg font-bold text-slate-700 text-[9px] focus:outline-none focus:ring-1 focus:ring-purple-500"
                                           >
                                             {Object.keys(FORMULA_FORMAT_DATA).map(fKey => (
                                               <option key={fKey} value={fKey}>
-                                                {FORMULA_FORMAT_DATA[fKey as FormulaFormat].label} ({FORMULA_FORMAT_DATA[fKey as FormulaFormat].ml} ml)
+                                                {FORMULA_FORMAT_DATA[fKey as FormulaFormat].label}
                                               </option>
                                             ))}
                                           </select>
                                         </div>
+
+                                        {isPowder && (
+                                          <div>
+                                            <span className="text-purple-600 font-semibold block text-[8.5px] uppercase">Dilución (%)</span>
+                                            <div className="relative mt-0.5">
+                                              <input
+                                                type="number"
+                                                min="5"
+                                                max="30"
+                                                step="0.5"
+                                                value={dilVal}
+                                                placeholder="14"
+                                                onChange={(e) => {
+                                                  const val = Math.max(1, Number(e.target.value) || 14);
+                                                  const newYield = calculateFormulaYieldMl({ formato: fmtKey, dilucion_pct: val });
+                                                  setFormulaPricings(prev => {
+                                                    const updated = {
+                                                      ...prev,
+                                                      [key]: {
+                                                        ...prev[key],
+                                                        precio_tarro: prev[key]?.precio_tarro || 0,
+                                                        formato: fmtKey,
+                                                        dilucion_pct: val,
+                                                        ml_por_tarro: newYield
+                                                      }
+                                                    };
+                                                    try {
+                                                      localStorage.setItem('formula_pricings_v2', JSON.stringify(updated));
+                                                    } catch (err) {}
+                                                    return updated;
+                                                  });
+                                                }}
+                                                className="w-full pr-5 pl-1.5 py-1 bg-purple-50/50 border border-purple-200 rounded-lg font-black text-purple-900 font-mono text-right focus:outline-none focus:ring-1 focus:ring-purple-500 text-[10px]"
+                                              />
+                                              <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-purple-500 font-bold text-[9px]">%</span>
+                                            </div>
+                                          </div>
+                                        )}
                                       </div>
                                     </div>
                                   );
