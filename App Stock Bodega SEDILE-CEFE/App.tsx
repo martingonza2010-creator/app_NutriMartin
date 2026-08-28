@@ -383,9 +383,21 @@ const parseMermaRecord = (r: any) => {
   };
 };
 
+export type FormulaFormat = 'polvo_400g' | 'polvo_800g' | 'polvo_1kg' | 'botellin_200ml' | 'rth_1000ml' | 'rth_500ml';
+
+export const FORMULA_FORMAT_DATA: Record<FormulaFormat, { label: string; ml: number; desc: string }> = {
+  'polvo_400g': { label: 'Tarro Polvo 400g', ml: 2857, desc: 'Dilución 14% (~2.857 ml)' },
+  'polvo_800g': { label: 'Tarro Polvo 800g', ml: 5714, desc: 'Dilución 14% (~5.714 ml)' },
+  'polvo_1kg': { label: 'Bolsa/Tarro 1 kg', ml: 9000, desc: 'Dilución ~11% (~9.000 ml)' },
+  'botellin_200ml': { label: 'Botellín / Caja 200 ml', ml: 200, desc: 'Envase individual (200 ml)' },
+  'rth_1000ml': { label: 'Bolsa RTH 1.000 ml', ml: 1000, desc: 'Enteral líquida (1.000 ml)' },
+  'rth_500ml': { label: 'Bolsa RTH 500 ml', ml: 500, desc: 'Enteral líquida (500 ml)' }
+};
+
 export interface FormulaPricing {
   precio_tarro: number;
-  ml_por_tarro: number;
+  formato?: FormulaFormat;
+  ml_por_tarro?: number;
 }
 
 const getMermaCost = (r: any, formulaPricings: Record<string, FormulaPricing> | Record<string, any>) => {
@@ -393,34 +405,38 @@ const getMermaCost = (r: any, formulaPricings: Record<string, FormulaPricing> | 
   const formulaName = (parsed.supplementName || '').trim();
   const containerType = (parsed.containerType || '').trim();
   
-  let pricing: { precio_tarro: number; ml_por_tarro: number } | undefined = undefined;
+  let pricing: { precio_tarro: number; ml_por_tarro: number; formato?: FormulaFormat } | undefined = undefined;
   
   if (formulaName) {
     if (formulaPricings[formulaName]) {
       const p = formulaPricings[formulaName];
-      pricing = typeof p === 'number' ? { precio_tarro: p, ml_por_tarro: 2800 } : p;
+      pricing = typeof p === 'number' ? { precio_tarro: p, ml_por_tarro: 2857 } : p;
     } else {
       const matchKey = Object.keys(formulaPricings).find(k => 
         formulaName.toLowerCase().includes(k.toLowerCase()) || k.toLowerCase().includes(formulaName.toLowerCase())
       );
       if (matchKey) {
         const p = formulaPricings[matchKey];
-        pricing = typeof p === 'number' ? { precio_tarro: p, ml_por_tarro: 2800 } : p;
+        pricing = typeof p === 'number' ? { precio_tarro: p, ml_por_tarro: 2857 } : p;
       }
     }
   }
   
   if (!pricing && containerType && formulaPricings[containerType]) {
     const p = formulaPricings[containerType];
-    pricing = typeof p === 'number' ? { precio_tarro: p, ml_por_tarro: 2800 } : p;
+    pricing = typeof p === 'number' ? { precio_tarro: p, ml_por_tarro: 2857 } : p;
   }
   
   if (!pricing) {
-    pricing = { precio_tarro: 8500, ml_por_tarro: 2800 };
+    pricing = { precio_tarro: 8500, ml_por_tarro: 2857, formato: 'polvo_400g' };
   }
   
+  const totalMlYield = pricing.formato && FORMULA_FORMAT_DATA[pricing.formato] 
+    ? FORMULA_FORMAT_DATA[pricing.formato].ml 
+    : (pricing.ml_por_tarro || 2857);
+  
   const volMl = parsed.isLiquid ? (r.cantidad || 0) : ((r.cantidad || 0) * 100);
-  const costPerMl = (pricing.precio_tarro || 0) / Math.max(1, pricing.ml_por_tarro || 1);
+  const costPerMl = (pricing.precio_tarro || 0) / Math.max(1, totalMlYield);
   return Math.round(volMl * costPerMl);
 };
 
@@ -1106,24 +1122,24 @@ export default function App() {
       } catch (e) {}
     }
     return {
-      "Puramino": { precio_tarro: 38000, ml_por_tarro: 2800 },
-      "Frebini": { precio_tarro: 14000, ml_por_tarro: 1000 },
-      "Nan Optipro": { precio_tarro: 8900, ml_por_tarro: 2800 },
-      "Ensure": { precio_tarro: 12500, ml_por_tarro: 2800 },
-      "Nutren Junior": { precio_tarro: 15000, ml_por_tarro: 2800 },
-      "Pediasure": { precio_tarro: 16000, ml_por_tarro: 2800 },
-      "Alprem": { precio_tarro: 9500, ml_por_tarro: 2800 },
-      "Alfamino": { precio_tarro: 42000, ml_por_tarro: 2800 },
-      "Neocate": { precio_tarro: 45000, ml_por_tarro: 2800 },
-      "Similac": { precio_tarro: 9000, ml_por_tarro: 2800 },
-      "Leche Purita": { precio_tarro: 3200, ml_por_tarro: 3000 },
-      "Botellines": { precio_tarro: 2500, ml_por_tarro: 200 },
-      "Jugos en caja": { precio_tarro: 800, ml_por_tarro: 200 },
-      "Mamaderas (Genérico)": { precio_tarro: 8000, ml_por_tarro: 2800 },
-      "Vasos con suplemento (Genérico)": { precio_tarro: 12000, ml_por_tarro: 2800 },
-      "Vasos con productos especiales (Genérico)": { precio_tarro: 25000, ml_por_tarro: 2800 },
-      "Jeringa BIC (Genérico)": { precio_tarro: 8000, ml_por_tarro: 2800 },
-      "Jeringa Gavage (Genérico)": { precio_tarro: 8000, ml_por_tarro: 2800 }
+      "Neocate": { precio_tarro: 55000, formato: 'polvo_400g', ml_por_tarro: 2857 },
+      "Puramino": { precio_tarro: 38000, formato: 'polvo_400g', ml_por_tarro: 2857 },
+      "Alfamino": { precio_tarro: 42000, formato: 'polvo_400g', ml_por_tarro: 2857 },
+      "Frebini": { precio_tarro: 14000, formato: 'rth_1000ml', ml_por_tarro: 1000 },
+      "Nan Optipro": { precio_tarro: 8900, formato: 'polvo_400g', ml_por_tarro: 2857 },
+      "Ensure": { precio_tarro: 14500, formato: 'polvo_800g', ml_por_tarro: 5714 },
+      "Nutren Junior": { precio_tarro: 15000, formato: 'polvo_400g', ml_por_tarro: 2857 },
+      "Pediasure": { precio_tarro: 16000, formato: 'polvo_400g', ml_por_tarro: 2857 },
+      "Alprem": { precio_tarro: 9500, formato: 'polvo_400g', ml_por_tarro: 2857 },
+      "Similac": { precio_tarro: 9000, formato: 'polvo_400g', ml_por_tarro: 2857 },
+      "Leche Purita": { precio_tarro: 3200, formato: 'polvo_1kg', ml_por_tarro: 9000 },
+      "Botellines": { precio_tarro: 2500, formato: 'botellin_200ml', ml_por_tarro: 200 },
+      "Jugos en caja": { precio_tarro: 800, formato: 'botellin_200ml', ml_por_tarro: 200 },
+      "Mamaderas (Genérico)": { precio_tarro: 8000, formato: 'polvo_400g', ml_por_tarro: 2857 },
+      "Vasos con suplemento (Genérico)": { precio_tarro: 12000, formato: 'polvo_400g', ml_por_tarro: 2857 },
+      "Vasos con productos especiales (Genérico)": { precio_tarro: 25000, formato: 'polvo_400g', ml_por_tarro: 2857 },
+      "Jeringa BIC (Genérico)": { precio_tarro: 8000, formato: 'polvo_400g', ml_por_tarro: 2857 },
+      "Jeringa Gavage (Genérico)": { precio_tarro: 8000, formato: 'polvo_400g', ml_por_tarro: 2857 }
     };
   });
 
@@ -7514,9 +7530,6 @@ export default function App() {
                                   {Object.keys(formulaPricings).length} fórmulas
                                 </span>
                               </div>
-                              <p className="text-[10px] text-slate-400">
-                                Configura el precio por tarro ($) y los ml totales que rinde cada uno para calcular el costo exacto por ml mermado.
-                              </p>
                             </div>
 
                             {/* Buscador */}
@@ -7535,8 +7548,11 @@ export default function App() {
                               {Object.keys(formulaPricings)
                                 .filter(key => !formulaSearchTerm.trim() || key.toLowerCase().includes(formulaSearchTerm.toLowerCase()))
                                 .map((key) => {
-                                  const item = formulaPricings[key] || { precio_tarro: 0, ml_por_tarro: 2800 };
-                                  const costPerMl = (item.precio_tarro || 0) / Math.max(1, item.ml_por_tarro || 1);
+                                  const item = formulaPricings[key] || { precio_tarro: 0, formato: 'polvo_400g', ml_por_tarro: 2857 };
+                                  const fmtKey = (item.formato || 'polvo_400g') as FormulaFormat;
+                                  const fmtData = FORMULA_FORMAT_DATA[fmtKey] || FORMULA_FORMAT_DATA['polvo_400g'];
+                                  const totalMlYield = fmtData.ml;
+                                  const costPerMl = (item.precio_tarro || 0) / Math.max(1, totalMlYield);
 
                                   return (
                                     <div key={key} className="p-2.5 bg-slate-50/70 border border-slate-200/80 rounded-xl space-y-1.5 hover:bg-slate-100/50 transition-colors">
@@ -7556,15 +7572,17 @@ export default function App() {
                                               type="number"
                                               min="0"
                                               value={item.precio_tarro || ''}
-                                              placeholder="Ej: 38000"
+                                              placeholder="Ej: 55000"
                                               onChange={(e) => {
                                                 const val = Math.max(0, Number(e.target.value) || 0);
                                                 setFormulaPricings(prev => {
                                                   const updated = {
                                                     ...prev,
                                                     [key]: {
+                                                      ...prev[key],
                                                       precio_tarro: val,
-                                                      ml_por_tarro: prev[key]?.ml_por_tarro || 2800
+                                                      formato: prev[key]?.formato || 'polvo_400g',
+                                                      ml_por_tarro: fmtData.ml
                                                     }
                                                   };
                                                   try {
@@ -7579,32 +7597,35 @@ export default function App() {
                                         </div>
 
                                         <div>
-                                          <span className="text-slate-400 font-semibold block text-[8.5px] uppercase">Rendimiento (ml)</span>
-                                          <div className="relative mt-0.5">
-                                            <input
-                                              type="number"
-                                              min="1"
-                                              value={item.ml_por_tarro || ''}
-                                              placeholder="Ej: 2800"
-                                              onChange={(e) => {
-                                                const val = Math.max(1, Number(e.target.value) || 1);
-                                                setFormulaPricings(prev => {
-                                                  const updated = {
-                                                    ...prev,
-                                                    [key]: {
-                                                      precio_tarro: prev[key]?.precio_tarro || 0,
-                                                      ml_por_tarro: val
-                                                    }
-                                                  };
-                                                  try {
-                                                    localStorage.setItem('formula_pricings_v2', JSON.stringify(updated));
-                                                  } catch (err) {}
-                                                  return updated;
-                                                });
-                                              }}
-                                              className="w-full px-2 py-1 bg-white border border-slate-200 rounded-lg font-bold text-slate-700 font-mono text-right focus:outline-none focus:ring-1 focus:ring-purple-500"
-                                            />
-                                          </div>
+                                          <span className="text-slate-400 font-semibold block text-[8.5px] uppercase">Formato / Rendimiento</span>
+                                          <select
+                                            value={fmtKey}
+                                            onChange={(e) => {
+                                              const newFmt = e.target.value as FormulaFormat;
+                                              const newFmtData = FORMULA_FORMAT_DATA[newFmt] || FORMULA_FORMAT_DATA['polvo_400g'];
+                                              setFormulaPricings(prev => {
+                                                const updated = {
+                                                  ...prev,
+                                                  [key]: {
+                                                    precio_tarro: prev[key]?.precio_tarro || 0,
+                                                    formato: newFmt,
+                                                    ml_por_tarro: newFmtData.ml
+                                                  }
+                                                };
+                                                try {
+                                                  localStorage.setItem('formula_pricings_v2', JSON.stringify(updated));
+                                                } catch (err) {}
+                                                return updated;
+                                              });
+                                            }}
+                                            className="w-full mt-0.5 px-2 py-1 bg-white border border-slate-200 rounded-lg font-bold text-slate-700 text-[9px] focus:outline-none focus:ring-1 focus:ring-purple-500"
+                                          >
+                                            {Object.keys(FORMULA_FORMAT_DATA).map(fKey => (
+                                              <option key={fKey} value={fKey}>
+                                                {FORMULA_FORMAT_DATA[fKey as FormulaFormat].label} ({FORMULA_FORMAT_DATA[fKey as FormulaFormat].ml} ml)
+                                              </option>
+                                            ))}
+                                          </select>
                                         </div>
                                       </div>
                                     </div>
