@@ -2019,9 +2019,11 @@ export default function App() {
       cantidad: qtyToAdd
     };
 
-    // Buscar si ya existe un registro con la misma fecha y fórmula/producto para acumular
+    // Buscar si ya existe un registro con la misma fecha, sección, motivo y fórmula/producto para acumular
     const existing = mermasRecords.find(r => 
       r.fecha === recordToAdd.fecha &&
+      r.seccion === recordToAdd.seccion &&
+      r.motivo === recordToAdd.motivo &&
       r.producto_unidad === recordToAdd.producto_unidad
     );
 
