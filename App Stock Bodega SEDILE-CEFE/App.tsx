@@ -86,9 +86,9 @@ export interface WorkloadRecord {
 export interface MermaRecord {
   id: string;
   fecha: string;
-  seccion: 'Enterales' | 'Pediatría' | 'Neonatología';
-  motivo: 'Acumulación' | 'Alta informada' | 'Alta no informada' | 'Deceso' | 'Devolución para reutilizar' | 'Rechazo de suplemento';
-  producto_unidad: 'Mamaderas' | 'Vasos con suplemento' | 'Vasos con productos especiales' | 'Jeringas' | 'Botellines' | 'Jugos en caja';
+  seccion: 'Enterales' | 'Pediatría' | 'Neonatología' | string;
+  motivo: string;
+  producto_unidad: 'Mamaderas' | 'Vasos con suplemento' | 'Vasos con productos especiales' | 'Jeringas' | 'Botellines' | 'Jugos en caja' | string;
   cantidad: number;
   created_at?: string;
 }
@@ -496,11 +496,35 @@ const calculateAdministeredDoses = (startDateStr: string, startHourStr: string, 
 };
 
 const MOTIVO_COLORS: Record<string, string> = {
+  'No se entrega': '#64748b',
+  'Paciente no está': '#f97316',
+  'Ya tiene producto': '#06b6d4',
+  'Rechaza/no toma': '#8b5cf6',
+  'Leche materna': '#ec4899',
+  'Suspendido': '#ef4444',
+  'R0 no informado': '#f59e0b',
+  'En ayuno': '#eab308',
+  'Aislamiento': '#6366f1',
+  'Pab/Examen': '#3b82f6',
+  'Trasladado': '#14b8a6',
+  'Alta no informado': '#d97706',
+  'Paciente grave': '#dc2626',
+  'Fallecido': '#334155',
+  'Otro': '#a855f7',
   'Acumulación': '#3b82f6',
   'Alta informada': '#10b981',
-  'Alta no informada': '#f59e0b',
-  'Deceso': '#ef4444',
-  'Rechazo de suplemento': '#8b5cf6'
+  'Deceso': '#dc2626',
+  'Rechazo de suplemento': '#8b5cf6',
+  'Devolución para reutilizar': '#10b981'
+};
+
+const getMotivoColor = (mot: string) => {
+  if (MOTIVO_COLORS[mot]) return MOTIVO_COLORS[mot];
+  if (mot && mot.startsWith('Otro')) return MOTIVO_COLORS['Otro'] || '#a855f7';
+  let hash = 0;
+  for (let i = 0; i < (mot || '').length; i++) hash = mot.charCodeAt(i) + ((hash << 5) - hash);
+  const c = (hash & 0x00ffffff).toString(16).toUpperCase();
+  return '#' + '00000'.substring(0, 6 - c.length) + c;
 };
 
 export default function App() {
@@ -557,12 +581,13 @@ export default function App() {
   const [newMerma, setNewMerma] = useState<Partial<MermaRecord>>({
     fecha: new Date().toLocaleDateString('en-CA'),
     seccion: '2°piso',
-    motivo: 'Acumulación',
+    motivo: 'No se entrega',
     producto_unidad: 'Mamaderas',
     cantidad: 0
   });
 
   const [mermaSuplemento, setMermaSuplemento] = useState<string>('');
+  const [otroMotivoText, setOtroMotivoText] = useState<string>('');
 
   // --- Estados de Costos Financieros ---
   const [showMermasCostModal, setShowMermasCostModal] = useState(false);
@@ -2004,6 +2029,11 @@ export default function App() {
       return;
     }
 
+    if (newMerma.motivo === 'Otro' && !otroMotivoText.trim()) {
+      showToast("Por favor especifique el motivo en el campo de texto.", "error");
+      return;
+    }
+
     setLoadingMermas(true);
     const qtyToAdd = Number(newMerma.cantidad);
     
@@ -2011,10 +2041,14 @@ export default function App() {
     const isLiquid = ['Mamaderas', 'Vasos con suplemento', 'Vasos con productos especiales', 'Botellines', 'Jugos en caja'].includes(newMerma.producto_unidad || '');
     const supplementVal = isLiquid ? mermaSuplemento : '';
     
+    const finalMotivo = newMerma.motivo === 'Otro'
+      ? (otroMotivoText.trim() ? `Otro: ${otroMotivoText.trim()}` : 'Otro')
+      : newMerma.motivo;
+
     const recordToAdd = {
       fecha: newMerma.fecha,
       seccion: newMerma.seccion as any,
-      motivo: newMerma.motivo,
+      motivo: finalMotivo,
       producto_unidad: (isLiquid && supplementVal ? (newMerma.producto_unidad + " - " + supplementVal) : newMerma.producto_unidad) as any,
       cantidad: qtyToAdd
     };
@@ -2100,6 +2134,7 @@ export default function App() {
       cantidad: 0
     }));
     setMermaSuplemento('');
+    setOtroMotivoText('');
     setLoadingMermas(false);
   };
 
@@ -3137,17 +3172,10 @@ export default function App() {
       }
     });
 
-    const reasonLosses: Record<string, number> = {
-      'Acumulación': 0,
-      'Alta informada': 0,
-      'Alta no informada': 0,
-      'Deceso': 0,
-      'Rechazo de suplemento': 0
-    };
+    const reasonLosses: Record<string, number> = {};
     netMermasRecords.forEach(r => {
-      if (reasonLosses[r.motivo] !== undefined) {
-        reasonLosses[r.motivo] += r.cantidad;
-      }
+      const mot = r.motivo || 'Sin motivo';
+      reasonLosses[mot] = (reasonLosses[mot] || 0) + (r.cantidad || 0);
     });
 
     let topReason = 'Ninguno';
@@ -3160,11 +3188,10 @@ export default function App() {
     });
 
     // Chart data (Moved to global scope)
-
     const motivoChartData = Object.keys(reasonLosses).map(m => ({
       name: m,
       value: reasonLosses[m]
-    })).filter(d => d.value > 0);
+    })).filter(d => d.value > 0).sort((a, b) => b.value - a.value);
 
     const seccionChartData = Object.keys(sectionLosses).map(sec => ({
       name: sec,
@@ -3186,11 +3213,12 @@ export default function App() {
       text += `🏢 Neonatología: ${sectionLosses.Neonatología} unidades\n\n`;
 
       text += `*DESGLOSE POR MOTIVO REAL:*\n`;
-      text += `⚠️ Acumulación: ${reasonLosses['Acumulación']} unidades\n`;
-      text += `⚠️ Alta informada: ${reasonLosses['Alta informada']} unidades\n`;
-      text += `⚠️ Alta no informada: ${reasonLosses['Alta no informada']} unidades\n`;
-      text += `⚠️ Deceso: ${reasonLosses['Deceso']} unidades\n`;
-      text += `⚠️ Rechazo de suplemento: ${reasonLosses['Rechazo de suplemento']} unidades\n\n`;
+      Object.keys(reasonLosses).forEach(mot => {
+        if (reasonLosses[mot] > 0) {
+          text += `⚠️ ${mot}: ${reasonLosses[mot]} unidades\n`;
+        }
+      });
+      text += `\n`;
 
       text += `*Total Mermas Reales:* ${totalNetMermasUnits} unidades.\n\n`;
       
@@ -3612,18 +3640,48 @@ export default function App() {
                 <div className="flex flex-col gap-1">
                   <label className="text-[9px] font-bold text-slate-400 uppercase">Motivo de Pérdida / Retorno</label>
                   <select
-                    value={newMerma.motivo || 'Acumulación'}
-                    onChange={(e) => setNewMerma(prev => ({ ...prev, motivo: e.target.value as any }))}
+                    value={newMerma.motivo || 'No se entrega'}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setNewMerma(prev => ({ ...prev, motivo: val }));
+                      if (val !== 'Otro') {
+                        setOtroMotivoText('');
+                      }
+                    }}
                     className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
                   >
-                    <option value="Acumulación">Acumulación</option>
-                    <option value="Alta informada">Alta informada</option>
-                    <option value="Alta no informada">Alta no informada</option>
-                    <option value="Deceso">Deceso</option>
-                    <option value="Devolución para reutilizar">Devolución para reutilizar (Sellado, 0 merma)</option>
-                    <option value="Rechazo de suplemento">Rechazo de suplemento (Desechado, merma)</option>
+                    <option value="No se entrega">No se entrega</option>
+                    <option value="Paciente no está">Paciente no está</option>
+                    <option value="Ya tiene producto">Ya tiene producto</option>
+                    <option value="Rechaza/no toma">Rechaza/no toma</option>
+                    <option value="Leche materna">Leche materna</option>
+                    <option value="Suspendido">Suspendido</option>
+                    <option value="R0 no informado">R0 no informado</option>
+                    <option value="En ayuno">En ayuno</option>
+                    <option value="Aislamiento">Aislamiento</option>
+                    <option value="Pab/Examen">Pab/Examen</option>
+                    <option value="Trasladado">Trasladado</option>
+                    <option value="Alta no informado">Alta no informado</option>
+                    <option value="Paciente grave">Paciente grave</option>
+                    <option value="Fallecido">Fallecido</option>
+                    <option value="Otro">Otro (Escribir motivo...)</option>
                   </select>
                 </div>
+
+                {/* Si seleccionó "Otro", mostrar campo de texto corto */}
+                {newMerma.motivo === 'Otro' && (
+                  <div className="flex flex-col gap-1 animate-fade-in">
+                    <label className="text-[9px] font-bold text-purple-600 uppercase">Especificar Otro Motivo</label>
+                    <input
+                      type="text"
+                      placeholder="Especifique el motivo..."
+                      required
+                      value={otroMotivoText}
+                      onChange={(e) => setOtroMotivoText(e.target.value)}
+                      className="w-full px-3 py-2 bg-purple-50/50 border border-purple-200 rounded-xl text-xs font-bold text-purple-900 focus:outline-none focus:ring-2 focus:ring-purple-500/20 placeholder:text-purple-300"
+                    />
+                  </div>
+                )}
 
                 {/* Contenedor / Envase */}
                 <div className="flex flex-col gap-1">
@@ -3726,7 +3784,7 @@ export default function App() {
                             dataKey="value"
                           >
                             {motivoChartData.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={MOTIVO_COLORS[entry.name] || '#cbd5e1'} />
+                              <Cell key={`cell-${index}`} fill={getMotivoColor(entry.name)} />
                             ))}
                           </Pie>
                           <Tooltip formatter={(value) => [`${value} uds`, 'Cantidad']} />
@@ -3736,7 +3794,7 @@ export default function App() {
                         {motivoChartData.map((entry) => (
                           <div key={entry.name} className="flex items-center justify-between border-b border-slate-50 pb-0.5">
                             <div className="flex items-center gap-1.5 truncate max-w-[140px]">
-                              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: MOTIVO_COLORS[entry.name] }}></span>
+                              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: getMotivoColor(entry.name) }}></span>
                               <span className="text-slate-500 truncate">{entry.name}</span>
                             </div>
                             <span className="text-slate-800 font-mono font-bold">{entry.value} uds ({Math.round((entry.value / (totalNetMermasUnits || 1)) * 100)}%)</span>
@@ -7332,14 +7390,14 @@ export default function App() {
                                         dataKey="value"
                                       >
                                         {motivoChartDataList.map((entry, index) => (
-                                          <Cell key={"cell-" + index} fill={MOTIVO_COLORS[entry.name] || '#cbd5e1'} />
+                                          <Cell key={"cell-" + index} fill={getMotivoColor(entry.name)} />
                                         ))}
                                       </Pie>
-                                      <Tooltip formatter={(value) => ["$ " + value.toLocaleString('es-CL'), 'Costo Pérdida']} />
+                                      <Tooltip formatter={(value) => [`$${Number(value).toLocaleString('es-CL')}`, 'Costo Merma']} />
                                     </PieChart>
                                   </ResponsiveContainer>
                                 </div>
-                                <div className="space-y-1.5 w-full text-xs font-semibold">
+                                <div className="space-y-1 mt-1 text-[9px] font-semibold">
                                   {motivoChartDataList.map((entry) => (
                                     <div key={entry.name} className="flex items-center justify-between border-b border-slate-100 pb-1">
                                       <div className="flex items-center gap-1.5 truncate max-w-[170px]">
