@@ -383,9 +383,45 @@ const parseMermaRecord = (r: any) => {
   };
 };
 
-const getMermaCost = (r: any, mermaUnitCosts: Record<string, number>) => {
-  const { containerType, equivQty } = parseMermaRecord(r);
-  return equivQty * (mermaUnitCosts[containerType] || 0);
+export interface FormulaPricing {
+  precio_tarro: number;
+  ml_por_tarro: number;
+}
+
+const getMermaCost = (r: any, formulaPricings: Record<string, FormulaPricing> | Record<string, any>) => {
+  const parsed = parseMermaRecord(r);
+  const formulaName = (parsed.supplementName || '').trim();
+  const containerType = (parsed.containerType || '').trim();
+  
+  let pricing: { precio_tarro: number; ml_por_tarro: number } | undefined = undefined;
+  
+  if (formulaName) {
+    if (formulaPricings[formulaName]) {
+      const p = formulaPricings[formulaName];
+      pricing = typeof p === 'number' ? { precio_tarro: p, ml_por_tarro: 2800 } : p;
+    } else {
+      const matchKey = Object.keys(formulaPricings).find(k => 
+        formulaName.toLowerCase().includes(k.toLowerCase()) || k.toLowerCase().includes(formulaName.toLowerCase())
+      );
+      if (matchKey) {
+        const p = formulaPricings[matchKey];
+        pricing = typeof p === 'number' ? { precio_tarro: p, ml_por_tarro: 2800 } : p;
+      }
+    }
+  }
+  
+  if (!pricing && containerType && formulaPricings[containerType]) {
+    const p = formulaPricings[containerType];
+    pricing = typeof p === 'number' ? { precio_tarro: p, ml_por_tarro: 2800 } : p;
+  }
+  
+  if (!pricing) {
+    pricing = { precio_tarro: 8500, ml_por_tarro: 2800 };
+  }
+  
+  const volMl = parsed.isLiquid ? (r.cantidad || 0) : ((r.cantidad || 0) * 100);
+  const costPerMl = (pricing.precio_tarro || 0) / Math.max(1, pricing.ml_por_tarro || 1);
+  return Math.round(volMl * costPerMl);
 };
 
 export interface ScheduleDoseDetail {
@@ -1061,24 +1097,38 @@ export default function App() {
     });
   }, [mermasRecords]);
   
-  // Costo por tipo de merma preparada
-  const [mermaUnitCosts, setMermaUnitCosts] = useState<Record<string, number>>(() => {
-    const saved = localStorage.getItem('merma_costs');
+  // Costo y rendimiento por fórmula láctea / suplemento
+  const [formulaPricings, setFormulaPricings] = useState<Record<string, FormulaPricing>>(() => {
+    const saved = localStorage.getItem('formula_pricings_v2');
     if (saved) {
       try {
         return JSON.parse(saved);
       } catch (e) {}
     }
     return {
-      "Mamaderas": 1200,
-      "Vasos con suplemento": 900,
-      "Vasos con productos especiales": 1500,
-      "Jeringa BIC": 600,
-      "Jeringa Gavage": 600,
-      "Botellines": 2200,
-      "Jugos en caja": 700
+      "Puramino": { precio_tarro: 38000, ml_por_tarro: 2800 },
+      "Frebini": { precio_tarro: 14000, ml_por_tarro: 1000 },
+      "Nan Optipro": { precio_tarro: 8900, ml_por_tarro: 2800 },
+      "Ensure": { precio_tarro: 12500, ml_por_tarro: 2800 },
+      "Nutren Junior": { precio_tarro: 15000, ml_por_tarro: 2800 },
+      "Pediasure": { precio_tarro: 16000, ml_por_tarro: 2800 },
+      "Alprem": { precio_tarro: 9500, ml_por_tarro: 2800 },
+      "Alfamino": { precio_tarro: 42000, ml_por_tarro: 2800 },
+      "Neocate": { precio_tarro: 45000, ml_por_tarro: 2800 },
+      "Similac": { precio_tarro: 9000, ml_por_tarro: 2800 },
+      "Leche Purita": { precio_tarro: 3200, ml_por_tarro: 3000 },
+      "Botellines": { precio_tarro: 2500, ml_por_tarro: 200 },
+      "Jugos en caja": { precio_tarro: 800, ml_por_tarro: 200 },
+      "Mamaderas (Genérico)": { precio_tarro: 8000, ml_por_tarro: 2800 },
+      "Vasos con suplemento (Genérico)": { precio_tarro: 12000, ml_por_tarro: 2800 },
+      "Vasos con productos especiales (Genérico)": { precio_tarro: 25000, ml_por_tarro: 2800 },
+      "Jeringa BIC (Genérico)": { precio_tarro: 8000, ml_por_tarro: 2800 },
+      "Jeringa Gavage (Genérico)": { precio_tarro: 8000, ml_por_tarro: 2800 }
     };
   });
+
+  const [formulaSearchTerm, setFormulaSearchTerm] = useState('');
+  const [newFormulaInput, setNewFormulaInput] = useState('');
 
   // Precios de tarros (inventario)
   const [productPrices, setProductPrices] = useState<Record<string, number>>(() => {
@@ -1093,8 +1143,8 @@ export default function App() {
 
   // Guardar en localStorage al cambiar
   useEffect(() => {
-    localStorage.setItem('merma_costs', JSON.stringify(mermaUnitCosts));
-  }, [mermaUnitCosts]);
+    localStorage.setItem('formula_pricings_v2', JSON.stringify(formulaPricings));
+  }, [formulaPricings]);
 
   useEffect(() => {
     localStorage.setItem('product_prices', JSON.stringify(productPrices));
@@ -3912,8 +3962,8 @@ export default function App() {
                     Object.values(monthGroups[monthKey]).forEach((dayRecs) => {
                       dayRecs.forEach((r) => {
                         if (r.motivo !== 'Devolución para reutilizar') {
-                          mQty += r.cantidad;
-                          mCost += r.cantidad * (mermaUnitCosts[r.producto_unidad] || 0);
+                          mQty += parseMermaRecord(r).isLiquid ? 1 : (r.cantidad || 0);
+                          mCost += getMermaCost(r, formulaPricings);
                         }
                       });
                     });
@@ -3949,8 +3999,8 @@ export default function App() {
                               dayRecords.forEach(r => {
                                 if (r.motivo !== 'Devolución para reutilizar') {
                                   const parsed = parseMermaRecord(r);
-                                  dQty += parsed.isLiquid ? 0 : r.cantidad;
-                                  dCost += getMermaCost(r, mermaUnitCosts);
+                                  dQty += parsed.isLiquid ? 1 : r.cantidad;
+                                  dCost += getMermaCost(r, formulaPricings);
                                 }
                               });
                               
@@ -4401,7 +4451,7 @@ export default function App() {
         const isReused = r.motivo === 'Devolución para reutilizar';
         const qty = r.cantidad || 0;
         const parsed = parseMermaRecord(r);
-        const recordCost = getMermaCost(r, mermaUnitCosts);
+        const recordCost = getMermaCost(r, formulaPricings);
         
         if (isReused) {
           totalReusedQty += parsed.isLiquid ? 0 : qty;
@@ -4715,7 +4765,7 @@ export default function App() {
         mermasRecords.forEach(r => {
           if (r.seccion === service && r.motivo !== 'Devolución para reutilizar') {
             sQty += (r.cantidad || 0);
-            sCost += getMermaCost(r, mermaUnitCosts);
+            sCost += getMermaCost(r, formulaPricings);
           }
         });
 
@@ -7332,8 +7382,8 @@ export default function App() {
                     mermasRecords.forEach(r => {
                       if (r.motivo !== 'Devolución para reutilizar') {
                         const parsed = parseMermaRecord(r);
-                        totalLossQty += parsed.isLiquid ? 0 : (r.cantidad || 0); // count only non-liquids as units
-                        totalLossCost += getMermaCost(r, mermaUnitCosts);
+                        totalLossQty += parsed.isLiquid ? 1 : (r.cantidad || 0);
+                        totalLossCost += getMermaCost(r, formulaPricings);
                       }
                     });
                     
@@ -7343,7 +7393,7 @@ export default function App() {
                     const motivoCostDataMap = {};
                     mermasRecords.forEach(r => {
                       if (r.motivo !== 'Devolución para reutilizar') {
-                        const cost = getMermaCost(r, mermaUnitCosts);
+                        const cost = getMermaCost(r, formulaPricings);
                         motivoCostDataMap[r.motivo] = (motivoCostDataMap[r.motivo] || 0) + cost;
                       }
                     });
@@ -7452,31 +7502,146 @@ export default function App() {
                             )}
                           </div>
 
-                          {/* Inputs de costos de mermas */}
-                          <div className="lg:col-span-5 bg-white p-5 rounded-2xl border border-slate-200/60 shadow-sm flex flex-col gap-4">
-                            <div>
-                              <h4 className="font-bold text-xs text-slate-700 uppercase tracking-tight">Costos de Mermas Preparadas</h4>
-                              <p className="text-[10px] text-slate-400 mt-0.5">Define el costo unitario por cada elemento preparado para valuar las mermas.</p>
+                          {/* Inputs de costos de Fórmulas y Suplementos */}
+                          <div className="lg:col-span-5 bg-white p-5 rounded-2xl border border-slate-200/60 shadow-sm flex flex-col gap-3.5 max-h-[500px] overflow-hidden">
+                            <div className="flex flex-col gap-1 border-b border-slate-100 pb-2.5">
+                              <div className="flex items-center justify-between">
+                                <h4 className="font-bold text-xs text-slate-700 uppercase tracking-tight flex items-center gap-1.5">
+                                  <span>🍼</span>
+                                  <span>Precios de Fórmulas y Suplementos</span>
+                                </h4>
+                                <span className="text-[9px] bg-purple-100 text-purple-800 font-bold px-2 py-0.5 rounded-full">
+                                  {Object.keys(formulaPricings).length} fórmulas
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-slate-400">
+                                Configura el precio por tarro ($) y los ml totales que rinde cada uno para calcular el costo exacto por ml mermado.
+                              </p>
                             </div>
-                            <div className="space-y-3">
-                              {Object.keys(mermaUnitCosts).map((cat) => (
-                                <div key={cat} className="flex items-center justify-between gap-3 text-xs">
-                                  <span className="text-slate-600 font-bold truncate">{cat}</span>
-                                  <div className="relative w-28 shrink-0">
-                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold font-mono">$</span>
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      value={mermaUnitCosts[cat]}
-                                      onChange={(e) => {
-                                        const val = Math.max(0, Number(e.target.value) || 0);
-                                        setMermaUnitCosts(prev => ({ ...prev, [cat]: val }));
-                                      }}
-                                      className="w-full pl-7 pr-3 py-1.5 border border-slate-200 rounded-xl font-bold text-slate-700 font-mono text-right focus:outline-none focus:ring-2 focus:ring-purple-500/20"
-                                    />
-                                  </div>
-                                </div>
-                              ))}
+
+                            {/* Buscador */}
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                placeholder="🔍 Filtrar fórmula o suplemento..."
+                                value={formulaSearchTerm}
+                                onChange={(e) => setFormulaSearchTerm(e.target.value)}
+                                className="w-full px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
+                              />
+                            </div>
+
+                            {/* Lista de fórmulas configurables */}
+                            <div className="space-y-2.5 overflow-y-auto pr-1 flex-1">
+                              {Object.keys(formulaPricings)
+                                .filter(key => !formulaSearchTerm.trim() || key.toLowerCase().includes(formulaSearchTerm.toLowerCase()))
+                                .map((key) => {
+                                  const item = formulaPricings[key] || { precio_tarro: 0, ml_por_tarro: 2800 };
+                                  const costPerMl = (item.precio_tarro || 0) / Math.max(1, item.ml_por_tarro || 1);
+
+                                  return (
+                                    <div key={key} className="p-2.5 bg-slate-50/70 border border-slate-200/80 rounded-xl space-y-1.5 hover:bg-slate-100/50 transition-colors">
+                                      <div className="flex items-center justify-between gap-2">
+                                        <strong className="text-xs text-slate-800 font-bold truncate" title={key}>{key}</strong>
+                                        <span className="text-[9px] font-mono font-black text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md border border-purple-100">
+                                          ${costPerMl.toFixed(2)} / ml
+                                        </span>
+                                      </div>
+
+                                      <div className="grid grid-cols-2 gap-2 text-[10px]">
+                                        <div>
+                                          <span className="text-slate-400 font-semibold block text-[8.5px] uppercase">Precio Tarro/Envase</span>
+                                          <div className="relative mt-0.5">
+                                            <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 font-bold font-mono">$</span>
+                                            <input
+                                              type="number"
+                                              min="0"
+                                              value={item.precio_tarro || ''}
+                                              placeholder="Ej: 38000"
+                                              onChange={(e) => {
+                                                const val = Math.max(0, Number(e.target.value) || 0);
+                                                setFormulaPricings(prev => {
+                                                  const updated = {
+                                                    ...prev,
+                                                    [key]: {
+                                                      precio_tarro: val,
+                                                      ml_por_tarro: prev[key]?.ml_por_tarro || 2800
+                                                    }
+                                                  };
+                                                  try {
+                                                    localStorage.setItem('formula_pricings_v2', JSON.stringify(updated));
+                                                  } catch (err) {}
+                                                  return updated;
+                                                });
+                                              }}
+                                              className="w-full pl-5 pr-2 py-1 bg-white border border-slate-200 rounded-lg font-bold text-slate-700 font-mono text-right focus:outline-none focus:ring-1 focus:ring-purple-500"
+                                            />
+                                          </div>
+                                        </div>
+
+                                        <div>
+                                          <span className="text-slate-400 font-semibold block text-[8.5px] uppercase">Rendimiento (ml)</span>
+                                          <div className="relative mt-0.5">
+                                            <input
+                                              type="number"
+                                              min="1"
+                                              value={item.ml_por_tarro || ''}
+                                              placeholder="Ej: 2800"
+                                              onChange={(e) => {
+                                                const val = Math.max(1, Number(e.target.value) || 1);
+                                                setFormulaPricings(prev => {
+                                                  const updated = {
+                                                    ...prev,
+                                                    [key]: {
+                                                      precio_tarro: prev[key]?.precio_tarro || 0,
+                                                      ml_por_tarro: val
+                                                    }
+                                                  };
+                                                  try {
+                                                    localStorage.setItem('formula_pricings_v2', JSON.stringify(updated));
+                                                  } catch (err) {}
+                                                  return updated;
+                                                });
+                                              }}
+                                              className="w-full px-2 py-1 bg-white border border-slate-200 rounded-lg font-bold text-slate-700 font-mono text-right focus:outline-none focus:ring-1 focus:ring-purple-500"
+                                            />
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                            </div>
+
+                            {/* Agregar nueva fórmula personalizada */}
+                            <div className="flex items-center gap-1.5 pt-2 border-t border-slate-100 shrink-0">
+                              <input
+                                type="text"
+                                placeholder="+ Agregar fórmula/suplemento..."
+                                value={newFormulaInput}
+                                onChange={(e) => setNewFormulaInput(e.target.value)}
+                                className="flex-1 px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none"
+                              />
+                              <button
+                                onClick={() => {
+                                  if (!newFormulaInput.trim()) return;
+                                  const name = newFormulaInput.trim();
+                                  setFormulaPricings(prev => {
+                                    const updated = {
+                                      ...prev,
+                                      [name]: { precio_tarro: 10000, ml_por_tarro: 2800 }
+                                    };
+                                    try {
+                                      localStorage.setItem('formula_pricings_v2', JSON.stringify(updated));
+                                    } catch (err) {}
+                                    return updated;
+                                  });
+                                  setNewFormulaInput('');
+                                  showToast(`Fórmula "${name}" agregada a la lista de precios`, "success");
+                                }}
+                                className="px-3 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-bold text-xs border-none cursor-pointer"
+                              >
+                                Agregar
+                              </button>
                             </div>
                           </div>
                         </div>
