@@ -2196,10 +2196,30 @@ export default function App() {
             .select();
 
           if (!error && data && data.length > 0) {
-            showToast("Registro de merma agregado", "success");
+            showToast("Registro de merma guardado en Supabase", "success");
             success = true;
           } else {
-            console.error("Error al guardar en Supabase:", error);
+            console.warn("Fallo insert directo en Supabase, intentando reintento compatible:", error);
+            // Reintento compatible: mapear seccion a baseSection si la DB antigua tiene check constraint
+            const parsed = parseMermaRecord(recordToAdd);
+            const compatibleRecord = {
+              ...recordToAdd,
+              seccion: parsed.baseSection as any,
+              producto_unidad: recordToAdd.seccion !== parsed.baseSection 
+                ? `[${recordToAdd.seccion}] ${recordToAdd.producto_unidad}` 
+                : recordToAdd.producto_unidad
+            };
+            const { data: retryData, error: retryError } = await supabase
+              .from('mermas_sedile')
+              .insert([compatibleRecord])
+              .select();
+
+            if (!retryError && retryData && retryData.length > 0) {
+              showToast("Guardado en Supabase (¡Ejecuta la migración SQL de mermas para desbloquear secciones!)", "warning");
+              success = true;
+            } else {
+              console.error("Error definitivo al guardar en Supabase:", retryError || error);
+            }
           }
         } catch (err) {
           console.error("Excepción al guardar en Supabase:", err);
